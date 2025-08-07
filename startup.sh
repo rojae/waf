@@ -1,8 +1,8 @@
 #!/bin/bash
+
+# quilt when error
 set -e
 
-# generate include.conf according modsecurity/rules
-./generate-include.sh
-
 # docker build > run
-docker-compose up --build
+docker-compose build --no-cache
+docker-compose up
