@@ -1,5 +1,5 @@
 # waf
-Nginx Application (WAF) based on `OWASP ModSecurity Core Rule Set (CRS)`
+Nginx application (WAF) based on `OWASP ModSecurity Core Rule Set (CRS)`
 
 ---
 
@@ -47,12 +47,12 @@ docker-compose up
 
 ### Request
 ```bash
-curl "http://localhost:8080/?q=<script>alert(1)</script>" -i
+curl -i "http://localhost:8080/?q=<script>alert(1)</script>"
 ```
 
 ### Response
-```http
-some_user@your_desktop waf % curl "http://localhost:8080/?q=<script>alert(1)</script>" -i
+```sh
+some_user@your_desktop waf % curl -i "http://localhost:8080/?q=<script>alert(1)</script>"
 
 HTTP/1.1 403 Forbidden
 Server: nginx/1.22.1

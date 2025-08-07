@@ -12,14 +12,17 @@ RUN rm -f \
     /docker-entrypoint.d/92-update-real_ip.sh \
     /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 
-# conf 파일 복사
+# conf copy
 COPY ./nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./nginx/modsecurity/modsecurity.conf /etc/modsecurity/modsecurity.conf
 COPY ./nginx/modsecurity/crs-setup.conf /etc/modsecurity.d/crs-setup.conf
 COPY ./nginx/modsecurity/rules /etc/modsecurity.d/rules
+
+# nginx html file
+RUN rm -f /usr/share/nginx/html/index.html
 COPY ./nginx/html /usr/share/nginx/html
 
-# custom entrypoint 스크립트 복사
+# custom entrypoint script copy
 COPY ./nginx/init.sh /init.sh
 RUN chmod +x /init.sh
 
