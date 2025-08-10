@@ -1,137 +1,124 @@
-# waf
-Nginx application (WAF) based on `OWASP ModSecurity Core Rule Set (CRS)`
+# 🛡️ WAF - Nginx Application Firewall with ModSecurity & OWASP CRS
+
+[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/) [![Nginx](https://img.shields.io/badge/Nginx-1.22-green?logo=nginx)](https://nginx.org/) [![OWASP CRS](https://img.shields.io/badge/OWASP%20CRS-v4.0-orange)](https://coreruleset.org/) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE) [![YouTube Demo](https://img.shields.io/badge/YouTube-Demo-red?logo=youtube)](https://youtu.be/f_OKEZ0H4FQ)
+
+> **Nginx + ModSecurity WAF** powered by **OWASP ModSecurity Core Rule Set (CRS)** 🚀  
+> Test and experiment with a Web Application Firewall locally using Docker.
 
 ---
 
-## Components
-- **Nginx + ModSecurity**: WebServer(with ModSecurity engine)
-  - **OWASP CRS**: Attack Inspect Ruleset (`git pull https://github.com/coreruleset/coreruleset.git`)
-  - **Docker Compose**: LocalSetting docker-compose (custom dockerfile using `owasp/modsecurity:nginx-alpine`)
+## 📺 Preview
+[![youtube link](https://i9.ytimg.com/vi_webp/f_OKEZ0H4FQ/mq2.webp?sqp=CMCT4sQG-oaymwEmCMACELQB8quKqQMa8AEB-AH-CIAC0AWKAgwIABABGGcgZyhnMA8=&rs=AOn4CLAlm_0NgKKLtHNhWkIh6qA8LHUQMQ)](https://youtu.be/f_OKEZ0H4FQ)
 
 ---
 
-## Directory tree
+## ⚙️ Components
+- **Nginx + ModSecurity**: WebServer with ModSecurity engine
+- **OWASP CRS**: Attack detection ruleset ([coreruleset/coreruleset](https://github.com/coreruleset/coreruleset))
+- **Docker Compose**: Local setup with a custom Dockerfile based on `owasp/modsecurity:nginx-alpine`
 
+---
+
+## 📂 Directory Structure
 ```
-├── startup.sh                            # startup.sh (First entry)
-├── Dockerfile                            # customized dockerfile
+├── startup.sh
+├── Dockerfile
 ├── docker-compose.yml
 ├── nginx
-│   ├── nginx.conf                        # Nginx main config
-│   ├── init.sh                           # WAF initize sh
+│   ├── nginx.conf
+│   ├── init.sh
 │   ├── html/
-│   │   └── 403.html                      # 403 page
-│   │   └── 404.html                      # 404 page
+│   │   ├── 403.html
+│   │   └── 404.html
 │   └── modsecurity/
-│       ├── modsecurity.conf             # ModSecurity config
-│       ├── crs-setup.conf               # CRS setup, default setting
-│       ├── include.conf                 # included rule
-│       └── rules/                       # CRS ruleset (.conf, .data)
+│       ├── modsecurity.conf
+│       ├── crs-setup.conf
+│       ├── include.conf
+│       └── rules/
 ```
 
 ---
 
-## How to run?
+## 🚀 How to Run
 
 ```bash
-# 1. build container.
 docker-compose build --no-cache
-
-# 2. docker-compose up!
 docker-compose up
 ```
 
 ---
 
-## How to Test?
-
-### Request
+## 🧪 How to Test
+**Request**
 ```bash
 curl -i "http://localhost:8080/?q=<script>alert(1)</script>"
 ```
-
-### Response
-```sh
-some_user@your_desktop waf % curl -i "http://localhost:8080/?q=<script>alert(1)</script>"
-
+**Response**
+```http
 HTTP/1.1 403 Forbidden
 Server: nginx/1.22.1
-Date: Thu, 07 Aug 2025 14:34:23 GMT
-Content-Type: text/html
-Content-Length: 164
-Connection: keep-alive
-ETag: "6894b4aa-a4"
-
-<!DOCTYPE html>
-<html>
-<head>
-  <title>403 Forbidden</title>
-</head>
-<body>
-  <h1>403 Forbidden</h1>
-  <p>Access has been blocked. (ModSecurity)</p>
-</body>
-</html>
+...
+<h1>403 Forbidden</h1>
+<p>Access has been blocked. (ModSecurity)</p>
 ```
 
 ---
 
-## How check log?
+## 📜 Log Check
 
 ```bash
-# Docker Logs (should append -f)
 docker logs waf-nginx
-
-# modsecurity logs in docker-container
 docker exec -it waf-nginx cat /var/log/modsecurity/modsec_audit.log
 ```
 
 ---
 
-## Point check.
+## 🛠️ Key Configs
 
-- **`modsecurity.conf`**
-  ```conf
-    SecRuleEngine On
-    SecRequestBodyAccess On
-    SecResponseBodyAccess Off
-    SecAuditEngine RelevantOnly
-    SecAuditLogParts ABIJDEFHZ
-    SecAuditLog /var/log/modsecurity/modsec_audit.log
-    Include /etc/modsecurity.d/crs-setup.conf
-    Include /etc/modsecurity.d/rules/*.conf
-  ```
+**`modsecurity.conf`**
 
-- **`nginx.conf`**
-    ```conf
-        # modsecurity config
-        modsecurity on;
-        modsecurity_rules_file /etc/modsecurity/modsecurity.conf;
-    ```
+```conf
+SecRuleEngine On
+SecRequestBodyAccess On
+SecResponseBodyAccess Off
+SecAuditEngine RelevantOnly
+SecAuditLogParts ABIJDEFHZ
+SecAuditLog /var/log/modsecurity/modsec_audit.log
+Include /etc/modsecurity.d/crs-setup.conf
+Include /etc/modsecurity.d/rules/*.conf
+```
 
-- **`403 page`**
-  ```nginx
-  error_page 403 /403.html;
+**`nginx.conf`**
 
-  location = /403.html {
-      root /usr/share/nginx/html;
-      internal;
-  }
-  ```
+```conf
+modsecurity on;
+modsecurity_rules_file /etc/modsecurity/modsecurity.conf;
+```
 
----
+**`403 page`**
 
-## Rule setting example
+```nginx
+error_page 403 /403.html;
 
-| Case     | Rule ID  | Rule File                            |
-|---------------|----------|--------------------------------------|
-| XSS           | 941100   | REQUEST-941-APPLICATION-ATTACK-XSS   |
-| SQL Injection | 942100   | REQUEST-942-APPLICATION-ATTACK-SQLI  |
-| LFI           | 930100   | REQUEST-930-APPLICATION-ATTACK-LFI   |
+location = /403.html {
+    root /usr/share/nginx/html;
+    internal;
+}
+```
 
 ---
 
-## Reference
+## 🔍 Rule Examples
+
+| Case         | Rule ID  | Rule File                              |
+|--------------|----------|----------------------------------------|
+| XSS          | 941100   | REQUEST-941-APPLICATION-ATTACK-XSS     |
+| SQL Injection| 942100   | REQUEST-942-APPLICATION-ATTACK-SQLI    |
+| LFI          | 930100   | REQUEST-930-APPLICATION-ATTACK-LFI     |
+
+---
+
+## 📚 Reference
 
 - [OWASP CRS GitHub](https://github.com/coreruleset/coreruleset)
 - [ModSecurity Reference Manual](https://github.com/SpiderLabs/ModSecurity/wiki)
