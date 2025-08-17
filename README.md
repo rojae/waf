@@ -293,3 +293,4 @@ PUT _index_template/waf-template
 - MIT License (see `License.md`)
 - CRS: [https://github.com/coreruleset/coreruleset](https://github.com/coreruleset/coreruleset)
 - ModSecurity: [https://github.com/SpiderLabs/ModSecurity](https://github.com/SpiderLabs/ModSecurity)
+- Nikto: [https://github.com/sullo/nikto](https://github.com/sullo/nikto)
