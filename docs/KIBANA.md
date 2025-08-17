@@ -11,8 +11,8 @@
 def s = 0L;   // long으로 초기화
 if (doc.containsKey('modsec.status') && !doc['modsec.status'].empty) {
   s = doc['modsec.status'].value;
-} else if (doc.containsKey('transaction.response.http_code') && !doc['transaction.response.http_code'].empty) {
-  s = doc['transaction.response.http_code'].value;
+} else if (doc.containsKey('status') && !doc['status'].empty) {
+  s = doc['status'].value;
 }
 if (s >= 400) {
   emit("blocked");
