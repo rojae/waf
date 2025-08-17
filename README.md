@@ -1,290 +1,295 @@
-# 🛡️ WAF - Nginx Application Firewall with ModSecurity & OWASP CRS
+# 🛡️ WAF – Nginx Application Firewall with ModSecurity & OWASP CRS (Not Released)
 
-[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/) [![Nginx](https://img.shields.io/badge/Nginx-1.22-green?logo=nginx)](https://nginx.org/) [![OWASP CRS](https://img.shields.io/badge/OWASP%20CRS-v4.0-orange)](https://coreruleset.org/) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE) [![YouTube Demo](https://img.shields.io/badge/YouTube-Demo-red?logo=youtube)](https://youtu.be/f_OKEZ0H4FQ)
+&#x20;  &#x20;
 
-> **Nginx + ModSecurity WAF** powered by **OWASP ModSecurity Core Rule Set (CRS)** 🚀  
-> Test and experiment with a Web Application Firewall locally using Docker.
+**Nginx + ModSecurity WAF** powered by the **OWASP ModSecurity Core Rule Set (CRS)**. This repository spins up a full local pipeline with **Filebeat → Kafka → Logstash → Elasticsearch ← Kibana**, plus optional **ksqlDB** for stream processing.
 
 ---
 
-## 📺 Preview
-[![youtube link](https://i9.ytimg.com/vi_webp/f_OKEZ0H4FQ/mq2.webp?sqp=CMCT4sQG-oaymwEmCMACELQB8quKqQMa8AEB-AH-CIAC0AWKAgwIABABGGcgZyhnMA8=&rs=AOn4CLAlm_0NgKKLtHNhWkIh6qA8LHUQMQ)](https://youtu.be/f_OKEZ0H4FQ)
+## ✨ Highlights
 
+- Production-like local stack built with **Docker Compose**
+- **KRaft Kafka (no Zookeeper)** with scripted topic bootstrap
+- **Filebeat → Kafka **`` (single source of truth)
+- **Logstash fan‑out:**
+  - Indexes `waf-logs` to **Elasticsearch**
+  - **Replicates** the same event to **Kafka **`` (loop-safe)
+- Optional **ksqlDB** to derive `enriched`/`metrics` streams
+- **Kibana** dashboards for quick exploration
 
-## Flow Diagram
-- Nginx → (modsec-logs volume) → Filebeat → Kafka → Logstash → Elasticsearch ← Kibana
+---
+
+## 📐 Architecture
 
 ```mermaid
-flowchart TD
-    %% ===== Styles (밝은 톤) =====
-    classDef svc fill:#e8f1fd,stroke:#4a90e2,color:#0d1a26,stroke-width:1.2,rx:10,ry:10
-    classDef db  fill:#e6f7f1,stroke:#28a745,color:#0d1a26,rx:10,ry:10
-    classDef vol fill:#fff7e6,stroke:#ffa940,color:#663300,stroke-dasharray:3 3,rx:8,ry:8
-    classDef ext fill:#f5f5f5,stroke:#999,color:#333,stroke-dasharray:4 4,rx:8,ry:8
+flowchart LR
+  classDef svc fill:#e8f1fd,stroke:#4a90e2,color:#0d1a26,stroke-width:1.2,rx:10,ry:10
+  classDef db  fill:#e6f7f1,stroke:#28a745,color:#0d1a26,rx:10,ry:10
+  classDef vol fill:#fff7e6,stroke:#ffa940,color:#663300,stroke-dasharray:3 3,rx:8,ry:8
+  classDef topic fill:#f0f5ff,stroke:#5b8ff9,color:#0d1a26,rx:10,ry:10
 
-    %% ===== External =====
-    Client[Browser / Client]:::ext
-    ExtApps[External Apps]:::ext
+  C[Client]:::svc --> N[Nginx_ModSecurity]:::svc
+  N --> V[(modsec-logs volume)]:::vol
+  V -. ro mount .- F[Filebeat]:::svc
+  F -->|produce JSON| T1[[Kafka topic: waf-logs]]:::topic
+  K[(Kafka broker)]:::svc --- T1
 
-    %% ===== Nginx & Volume =====
-    subgraph Nginx[WAF - Nginx + ModSecurity]
-        N1[nginx - waf-nginx]:::svc
-        V1[(modsec-logs volume)]:::vol
-        N1 -->|write ModSecurity logs| V1
-    end
+  subgraph Logstash
+    L[logstash]:::svc
+  end
 
-    %% ===== Filebeat =====
-    subgraph Filebeat[Filebeat]
-        F1[filebeat - waf-filebeat]:::svc
-        V1 -. read-only mount .- F1
-        F1 -->|produce logs| K1
-    end
+  T1 -->|consume| L
+  L -->|index| E[Elasticsearch]:::db
+  L -->|replicate| T2[[Kafka topic: waf-modsec-raw]]:::topic
+  K --- T2
 
-    %% ===== Logstash =====
-    subgraph Logstash[Logstash]
-        L1[logstash - waf-logstash]:::svc
-        K1 -->|consume| L1
-        L1 -->|index| E1
-    end
+  subgraph Optional/Derived
+    T3[[waf-modsec-enriched]]:::topic
+    T4[[waf-modsec-metrics]]:::topic
+    KSQL[ksqlDB]:::svc
+    K --- T3
+    K --- T4
+    KSQL --- K
+  end
 
-    subgraph Kibana[Kibana]
-        B1[kibana - waf-kibana]:::svc
-        B1 -->|visualize and search| E1
-    end
-
-    %% ===== External Connections =====
-    Client -. HTTP 8080 .-> N1
-    Client -. HTTP 5601 .-> B1
-    ExtApps -. PLAINTEXT 9092 .-> K1
-
-```
-
-## Expaned Final Flow
-
-```mermaid
-flowchart TD
-    %% ===== Styles (밝은 톤) =====
-    classDef svc fill:#e8f1fd,stroke:#4a90e2,color:#0d1a26,stroke-width:1.2,rx:10,ry:10
-    classDef db  fill:#e6f7f1,stroke:#28a745,color:#0d1a26,rx:10,ry:10
-    classDef vol fill:#fff7e6,stroke:#ffa940,color:#663300,stroke-dasharray:3 3,rx:8,ry:8
-    classDef ext fill:#f5f5f5,stroke:#999,color:#333,stroke-dasharray:4 4,rx:8,ry:8
-    classDef topic fill:#f0f5ff,stroke:#5b8ff9,color:#0d1a26,rx:10,ry:10
-
-    %% ===== External traffic =====
-    Client[End users]:::ext
-
-    %% ===== Scalable ingest pool =====
-    subgraph IngestPool[WAF ingest pool scale out]
-      direction LR
-
-      subgraph UnitA[Ingest unit A]
-        NA[nginx waf a]:::svc
-        VA[(modsec logs a)]:::vol
-        FA[filebeat a]:::svc
-        NA --> VA
-        VA -. ro mount .- FA
-      end
-
-      subgraph UnitB[Ingest unit B]
-        NB[nginx waf b]:::svc
-        VB[(modsec logs b)]:::vol
-        FB[filebeat b]:::svc
-        NB --> VB
-        VB -. ro mount .- FB
-      end
-
-      subgraph UnitC[Ingest unit C]
-        NC[nginx waf c]:::svc
-        VC[(modsec logs c)]:::vol
-        FC[filebeat c]:::svc
-        NC --> VC
-        VC -. ro mount .- FC
-      end
-    end
-
-    %% ===== Kafka core =====
-    subgraph Kafka[Kafka cluster]
-      K1[kafka broker]:::svc
-      T1[[topic modsec logs]]:::topic
-      K1 --- T1
-    end
-
-    %% ===== Logstash to Elasticsearch to Kibana =====
-    subgraph Pipeline[Observability pipeline]
-      L1[logstash]:::svc
-      E1[elasticsearch]:::db
-      B1[kibana]:::svc
-      L1 -->|index| E1
-      B1 -->|visualize search| E1
-    end
-
-    %% ===== Other consumers =====
-    subgraph Others[Other systems consuming from kafka]
-      O1[siem or dq jobs]:::ext
-      O2[stream processors]:::ext
-      O3[data lake ingestors]:::ext
-    end
-
-    %% ===== Flows =====
-    Client -. http traffic .-> NA
-    Client -. http traffic .-> NB
-    Client -. http traffic .-> NC
-
-    FA -->|produce| K1
-    FB -->|produce| K1
-    FC -->|produce| K1
-
-    K1 -->|consume| L1
-    K1 --> O1
-    K1 --> O2
-    K1 --> O3
+  B[Kibana]:::svc -->|visualize| E
 ```
 
 ---
 
-## Deploy Flow
-```mermaid
-flowchart TD
-  subgraph FE[Admin Web UI]
-    UI[React Admin]
-  end
+## 🧩 Services (container names / ports)
 
-  subgraph BE[Backend API]
-    RULE[Rule Manager API]
-    BUNDLE[Bundle Builder]
-  end
+- **waf-nginx** – Nginx + ModSecurity (HTTP: **8080**) writes **ModSecurity JSON logs** to a Docker volume
+- **waf-filebeat** – reads the shared volume and publishes to Kafka topic ``
+- **waf-kafka** – Apache Kafka (Confluent **7.6.1**, KRaft mode) (**9092**)
+- **topics-init** – runs `kafka/ensure-topics.sh` to create topics idempotently
+- **waf-ksqldb** – ksqlDB server (**8088**)
+- **ksqldb-cli-init** – runs `ksqldb/ddl.sql` and `ksqldb/rulemap-init.sql` after ksqlDB is healthy
+- **waf-logstash** – consumes from Kafka, **indexes to ES**, and **fans out** to Kafka `waf-modsec-raw`
+- **waf-es** – Elasticsearch **8.15.2** (**9200**)
+- **waf-kibana** – Kibana **8.15.2** (**5601**)
 
-  subgraph WAFCluster[WAF Cluster]
-    AG[Agent fetch and apply]
-    WA[nginx modsecurity]
-  end
+---
 
-  subgraph DATA[Observability]
-    ES[Elasticsearch]
-    KB[Kibana]
-  end
+## 📦 Kafka Topics
 
-  UI -->|CRUD rule| RULE
-  RULE -->|build bundle| BUNDLE
-  BUNDLE -->|publish gitops or other api| AG
-  AG -->|download and verify| BUNDLE
-  AG -->|write rules conf| WA
-  AG -->|nginx test and reload| WA
+Created by `kafka/ensure-topics.sh` via the `topics-init` service:
 
-  WA -->|modsec logs| ES
-  ES --> KB
-  UI -->|view dashboards| KB
+- `waf-logs` (Filebeat → Kafka)
+- `waf-modsec-raw` (Logstash fan‑out copy of `waf-logs`)
+- `waf-rulemap` (compact; for lookups/joins)
+- `waf-modsec-enriched` (derived)
+- `waf-modsec-metrics` (derived)
+
+> **Note:** Filebeat can’t publish one event to two topics at once. That’s why we fan‑out in **Logstash**.
+
+---
+
+## 🚀 Quickstart
+
+### Prerequisites
+
+- Docker 20+
+- Docker Compose v2
+
+### Build & Run
+
+```bash
+# Build nginx image (uses local Dockerfile)
+docker compose build --no-cache
+
+# Start everything
+docker compose up -d
+```
+
+### Verify health
+
+```bash
+# Kafka topics
+docker exec -it waf-kafka \
+  kafka-topics --bootstrap-server kafka:9092 --list
+
+# ksqlDB info
+curl -fsS http://localhost:8088/info | jq .
+
+# Logstash config test
+docker exec -it waf-logstash \
+  logstash -t -f /usr/share/logstash/pipeline/pipeline.conf
+```
+
+### Generate traffic
+
+```bash
+curl -i "http://localhost:8080/test.html?q=<script>alert(1)</script>"
+```
+
+- Check **Kibana** at [http://localhost:5601](http://localhost:5601)
+- Data should appear in indices: `waf-logs-*`, `waf-modsec-raw-*`, and (if enabled) `waf-modsec-enriched-*`, `waf-modsec-metrics-*`
+
+---
+
+## ⚙️ Configuration
+
+### Nginx + ModSecurity
+
+- Configs sit under `nginx/` (see `nginx/nginx.conf`, `nginx/modsecurity/*`)
+- CRS rules are mounted from this repo (`coreruleset/`)
+
+### Filebeat → Kafka
+
+`filebeat/filebeat.yml` parses JSON, extracts a timestamp (`transaction.time_stamp → ts`), remaps a few fields, and publishes **only** to `waf-logs`:
+
+```yaml
+output.kafka:
+  hosts: ["kafka:9092"]
+  topic: "waf-logs"
+  compression: gzip
+  required_acks: 1
+  codec:
+    json:
+      pretty: false
+      escape_html: false
+```
+
+### Logstash (fan‑out + indexing)
+
+- Consumes `waf-logs`, `waf-modsec-raw`, `waf-modsec-enriched`, `waf-modsec-metrics`
+- **Fan‑out rule:** when consuming ``, Logstash indexes to ES and **also produces the same event** to Kafka topic ``. It does **not** re-publish anything consumed from `waf-modsec-raw` → no loop.
+- Optional: set a consistent partitioning key (e.g., `txId`) via `message_key => "%{txId}"` in the Kafka output.
+
+### ksqlDB
+
+- `ksqldb/ddl.sql` should create streams/tables (DDL only recommended)
+- `ksqldb/rulemap-init.sql` may seed data (DML). Both are run by `ksqldb-cli-init` after the server is healthy.
+- Handy queries:
+
+```sql
+SET 'auto.offset.reset'='earliest';
+SELECT * FROM RULEMAP EMIT CHANGES LIMIT 100;
+SELECT WINDOWSTART, WINDOWEND, * FROM ATTACKS_BY_IP_1M EMIT CHANGES LIMIT 100;
 ```
 
 ---
 
-## ⚙️ Components
-- **Nginx + ModSecurity**: WebServer with ModSecurity engine
-- **OWASP CRS**: Attack detection ruleset ([coreruleset/coreruleset](https://github.com/coreruleset/coreruleset))
-- **Docker Compose**: Local setup with a custom Dockerfile based on `owasp/modsecurity:nginx-alpine`
+## 📚 Directory Structure (excerpt)
 
----
-
-## 📂 Directory Structure
 ```
-├── startup.sh
-├── Dockerfile
+.
 ├── docker-compose.yml
-├── nginx
+├── Dockerfile
+├── nginx/
 │   ├── nginx.conf
 │   ├── init.sh
 │   ├── html/
-│   │   ├── 403.html
-│   │   └── 404.html
 │   └── modsecurity/
-│       ├── modsecurity.conf
-│       ├── crs-setup.conf
-│       ├── include.conf
-│       └── rules/
+├── filebeat/
+│   └── filebeat.yml
+├── logstash/
+│   └── pipeline/pipeline.conf
+├── kafka/
+│   └── ensure-topics.sh
+├── ksqldb/
+│   ├── ddl.sql
+│   └── rulemap-init.sql
+├── docs/
+│   ├── KAFKA.md
+│   ├── KIBANA.md
+│   ├── KSQL.md
+│   └── NGINX.md
+└── TROUBLESHOOTING/
+    ├── KSQL_INIT.md
+    └── KSQL_JOIN.md
 ```
 
 ---
 
-## 🚀 How to Run
+## 🧪 Testing & Ops Cheatsheet
 
-```bash
-docker-compose build --no-cache
-docker-compose up
-```
+**Trigger WAF**
 
----
-
-## 🧪 How to Test
-**Request**
 ```bash
 curl -i "http://localhost:8080/?q=<script>alert(1)</script>"
 ```
-**Response**
-```http
-HTTP/1.1 403 Forbidden
-Server: nginx/1.22.1
-...
-<h1>403 Forbidden</h1>
-<p>Access has been blocked. (ModSecurity)</p>
-```
 
----
-
-## 📜 Log Check
+**Check Nginx/ModSecurity logs**
 
 ```bash
 docker logs waf-nginx
-docker exec -it waf-nginx cat /var/log/modsecurity/modsec_audit.log
+Docker exec -it waf-nginx sh -lc 'tail -n 100 /var/log/modsecurity/*.log'
 ```
+
+**Watch Kafka topics**
+
+```bash
+docker exec -it waf-kafka \
+  kafka-console-consumer --bootstrap-server kafka:9092 \
+  --topic waf-logs --from-beginning --timeout-ms 5000
+```
+
+**Kibana**
+
+- [http://localhost:5601](http://localhost:5601)
+- Create data views: `waf-logs-*`, `waf-modsec-raw-*`, `waf-modsec-enriched-*`, `waf-modsec-metrics-*`
 
 ---
 
-## 🛠️ Key Configs
+## 🧱 (Optional) Index Template for ES - (Not Implementes)
 
-**`modsecurity.conf`**
+Lock down important field types to avoid mapping conflicts:
 
-```conf
-SecRuleEngine On
-SecRequestBodyAccess On
-SecResponseBodyAccess Off
-SecAuditEngine RelevantOnly
-SecAuditLogParts ABIJDEFHZ
-SecAuditLog /var/log/modsecurity/modsec_audit.log
-Include /etc/modsecurity.d/crs-setup.conf
-Include /etc/modsecurity.d/rules/*.conf
-```
-
-**`nginx.conf`**
-
-```conf
-modsecurity on;
-modsecurity_rules_file /etc/modsecurity/modsecurity.conf;
-```
-
-**`403 page`**
-
-```nginx
-error_page 403 /403.html;
-
-location = /403.html {
-    root /usr/share/nginx/html;
-    internal;
+```json
+PUT _index_template/waf-template
+{
+  "index_patterns": [
+    "waf-logs-*",
+    "waf-modsec-raw-*",
+    "waf-modsec-enriched-*",
+    "waf-modsec-metrics-*"
+  ],
+  "template": {
+    "settings": { "number_of_shards": 1, "number_of_replicas": 0 },
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "status": { "type": "integer" },
+        "anomalyScore": { "type": "integer" },
+        "txId": { "type": "keyword" },
+        "rule": { "properties": { "id": { "type": "keyword" } } },
+        "source": { "properties": { "ip": { "type": "ip" } } },
+        "url": {
+          "properties": {
+            "domain": { "type": "keyword" },
+            "path": { "type": "keyword" }
+          }
+        },
+        "event": { "properties": { "category": { "type": "keyword" }, "kind": { "type": "keyword" } } },
+        "observer": { "properties": { "type": { "type": "keyword" }, "name": { "type": "keyword" } } },
+        "labels": { "properties": { "tenant": { "type": "keyword" } } },
+        "message": { "type": "text" }
+      }
+    }
+  },
+  "priority": 200
 }
 ```
 
 ---
 
-## 🔍 Rule Examples
+## 🩺 Troubleshooting
 
-| Case         | Rule ID  | Rule File                              |
-|--------------|----------|----------------------------------------|
-| XSS          | 941100   | REQUEST-941-APPLICATION-ATTACK-XSS     |
-| SQL Injection| 942100   | REQUEST-942-APPLICATION-ATTACK-SQLI    |
-| LFI          | 930100   | REQUEST-930-APPLICATION-ATTACK-LFI     |
+- **Logstash config parse errors**: the DSL does **not** support semicolons `;`. Split plugin options by newline/spaces. Test with:
+  ```bash
+  docker exec -it waf-logstash logstash -t -f /usr/share/logstash/pipeline/pipeline.conf
+  ```
+- **Filebeat to two topics?** Not supported. Use **Logstash fan‑out** (already configured) or run a second Filebeat instance (not recommended).
+- ``** field rename conflicts**: Beats often send `host.*` as an object. If you need `url.domain`, copy from `host.name` instead of renaming the whole `host` object.
+- **Time zones & index date**: index suffixes are based on `@timestamp`. In this repo, date filters set `UTC` (you can change if you want KST-based cuts).
 
 ---
 
-## 📚 Reference
+## 🔒 License & Credits
 
-- [OWASP CRS GitHub](https://github.com/coreruleset/coreruleset)
-- [ModSecurity Reference Manual](https://github.com/SpiderLabs/ModSecurity/wiki)
+- MIT License (see `License.md`)
+- CRS: [https://github.com/coreruleset/coreruleset](https://github.com/coreruleset/coreruleset)
+- ModSecurity: [https://github.com/SpiderLabs/ModSecurity](https://github.com/SpiderLabs/ModSecurity)

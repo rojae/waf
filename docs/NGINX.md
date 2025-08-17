@@ -1,6 +1,6 @@
 # waf-nginx
 
-## commandline
+## command
 
 ### coreruleset clone
 ```sh
