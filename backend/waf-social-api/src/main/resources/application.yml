@@ -1,0 +1,27 @@
+server:
+  port: 8081
+  forward-headers-strategy: framework
+
+spring:
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid, profile, email
+            redirect-uri: "http://localhost:8081/login/oauth2/code/google"
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-32bytes-len}
+    access-ttl-seconds: 900
+    cookie-name: WAF_AT
+    cookie-domain: ${COOKIE_DOMAIN:localhost}

@@ -134,6 +134,21 @@ services:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
     environment:
       - LS_JAVA_OPTS=-Xms512m -Xmx512m
+    
+  redis:
+    image: redis:7-alpine
+    container_name: waf-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
 volumes:
   modsec-logs:
+  redis-data:
