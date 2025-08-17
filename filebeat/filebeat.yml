@@ -1,0 +1,45 @@
+filebeat.inputs:
+  - type: filestream
+    id: modsec
+    paths: ["/var/log/modsecurity/*.json"]
+    prospector.scanner.check_interval: 5s
+
+processors:
+  # message에 JSON이 들어온 경우 루트로 펼치기(상황에 맞게)
+  - decode_json_fields:
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+      add_error_key: true
+
+  # ModSecurity의 transaction.time_stamp -> ts(ISO8601) 로 파싱
+  - timestamp:
+      field: "transaction.time_stamp"
+      target_field: "ts"
+      timezone: "Asia/Seoul"
+      layouts: ["Mon Jan 2 15:04:05 2006"]
+
+  # 필요한 필드 매핑 (있으면 유지)
+  - rename:
+      fields:
+        - from: "transaction.remote_address"
+          to: "srcIp"
+        - from: "transaction.request.uri"
+          to: "uri"
+        - from: "transaction.response.http_code"
+          to: "status"
+        - from: "transaction.id"
+          to: "txId"
+      ignore_missing: true
+      fail_on_error: false
+
+output.kafka:
+  hosts: ["kafka:9092"]
+  topics:
+    - topic: "waf-logs"
+  compression: gzip
+  required_acks: 1
+  codec:
+    json:
+      pretty: false
+      escape_html: false

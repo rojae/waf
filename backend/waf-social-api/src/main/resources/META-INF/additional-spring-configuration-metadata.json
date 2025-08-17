@@ -1,0 +1,24 @@
+{
+  "properties": [
+    {
+      "name": "app.jwt.secret",
+      "type": "java.lang.String",
+      "description": "JWT 서명 키 (필수). 운영에서는 환경변수/시크릿으로 주입하세요."
+    },
+    {
+      "name": "app.jwt.access-ttl-seconds",
+      "type": "java.lang.String",
+      "description": "액세스 토큰 만료 시간(초). default is 3600s."
+    },
+    {
+      "name": "app.jwt.cookie-name",
+      "type": "java.lang.String",
+      "description": "JWT를 담을 쿠키 이름."
+    },
+    {
+      "name": "app.jwt.cookie-domain",
+      "type": "java.lang.String",
+      "description": "쿠키 도메인(예: .example.com). 미설정 시 호스트 한정 쿠키."
+    }
+  ]
+}
