@@ -47,7 +47,8 @@ services:
       - ./kafka/ensure-topics.sh:/scripts/ensure-topics.sh:ro
     entrypoint: ["/bin/bash","-lc","/scripts/ensure-topics.sh"]
 
-  # ksqlDB (raw -> enriched/metrics/alerts 토픽 생성)
+  # ksqlDB Server - Stream processing engine for real-time data transformation
+  # Processes raw WAF logs and creates enriched streams for metrics and alerts
   ksqldb:
     image: confluentinc/cp-ksqldb-server:7.6.6
     container_name: waf-ksqldb
@@ -83,25 +84,24 @@ services:
         condition: service_healthy
     volumes:
       - ./ksqldb/ddl.sql:/scripts/ddl.sql:ro
-      - ./ksqldb/rulemap-init.sql:/scripts/rulemap-init.sql:ro
     entrypoint: >
       bash -lc "
         echo 'ksqldb is healthy. applying DDL...';
-        ksql http://waf-ksqldb:8088 --file /scripts/ddl.sql &&
-        ksql http://waf-ksqldb:8088 --file /scripts/rulemap-init.sql
+        ksql http://waf-ksqldb:8088 --file /scripts/ddl.sql
       "
 
-  # Filebeat: tail ModSecurity logs -> Kafka (raw 토픽)
-  filebeat:
-    image: docker.elastic.co/beats/filebeat:8.15.2
-    container_name: waf-filebeat
-    depends_on:
-      - kafka
-      - nginx
-    volumes:
-      - modsec-logs:/var/log/modsecurity:ro
-      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-    command: ["filebeat", "-e", "-strict.perms=false"]
+  # Filebeat - Log shipper that tails ModSecurity audit logs
+  # Ships JSON-formatted logs to Kafka raw topic for stream processing
+  # filebeat:
+  #   image: docker.elastic.co/beats/filebeat:8.15.2
+  #   container_name: waf-filebeat
+  #   depends_on:
+  #     - kafka
+  #     - nginx
+  #   volumes:
+  #     - modsec-logs:/var/log/modsecurity:ro
+  #     - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+  #   command: ["filebeat", "-e", "-strict.perms=false"]
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.2
@@ -135,20 +135,143 @@ services:
     environment:
       - LS_JAVA_OPTS=-Xms512m -Xmx512m
     
-  redis:
-    image: redis:7-alpine
-    container_name: waf-redis
-    ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: waf-redis
+  #   ports:
+  #     - "6379:6379"
+  #   command: ["redis-server", "--appendonly", "yes"]
+  #   volumes:
+  #     - redis-data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+
+  # Real-time Processing Track Components
+  # Separate infrastructure for immediate threat detection and alerting
+  # redis-streams:
+  #   image: redis:7-alpine
+  #   container_name: waf-redis-streams
+  #   ports:
+  #     - "6380:6379"
+  #   command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+
+  fluent-bit:
+    image: fluent/fluent-bit:2.2
+    container_name: waf-fluent-bit
+    depends_on:
+      nginx:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     volumes:
-      - redis-data:/data
+      - modsec-logs:/var/log/modsecurity:ro
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./fluent-bit/waf_classifier.lua:/fluent-bit/etc/waf_classifier.lua:ro
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      test: ["CMD", "curl", "-f", "http://localhost:2020/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: waf-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=waf-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=waf-realtime
+      - DOCKER_INFLUXDB_INIT_RETENTION=7d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  realtime-processor:
+    build: ./services/realtime-processor
+    container_name: waf-realtime-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=waf-realtime-events
+      - KAFKA_GROUP=realtime-processor
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=waf-org
+      - INFLUXDB_BUCKET=waf-realtime
+      - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
+    volumes:
+      - ./lib/geoip/GeoLite2-City:/data:ro
+    restart: unless-stopped
+
+  alert-processor:
+    build: ./services/alert-processor
+    container_name: waf-alert-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: waf-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: waf-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=waf_analytics
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=adminpassword
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
 volumes:
   modsec-logs:
-  redis-data:
+  # redis-data:
+  influxdb-data:
+  clickhouse-data:
+  grafana-data:

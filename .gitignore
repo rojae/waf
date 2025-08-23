@@ -1,3 +1,7 @@
 /coreruleset
 /nikto
 .DS_Store
+/GeoLite2-City/*
+lib/geoip/*
+.*/*
+

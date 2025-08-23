@@ -203,5 +203,6 @@ INSERT INTO RULEMAP VALUES ('944210','attack-java','CRITICAL');  -- Possible Jav
 -- =========================
 -- BLOCKING EVALUATION (REQUEST-949)
 -- =========================
--- Inbound anomaly score가 임계치 초과 시 실제 차단을 수행하는 스위치 룰.
+-- Switch rule that performs actual blocking when inbound anomaly score exceeds threshold
+-- This is the final evaluation rule that triggers the WAF's blocking response
 INSERT INTO RULEMAP VALUES ('949110','blocking-evaluation','CRITICAL'); -- Inbound Anomaly Score Exceeded

@@ -56,11 +56,17 @@ create_topic() {
   echo "----"
 }
 
-# ===== Define For Logging Data =====
-create_topic "waf-logs"       6 1
+# ===== Analytics Track Topics =====
+create_topic "waf-logs"             6 1  # 분석용 로그 (스캐너 포함)
+create_topic "waf-modsec-raw"       6 1  # ksqlDB 처리용  
+create_topic "waf-modsec-enriched"  6 1  # 룰맵 조인된 데이터
+create_topic "waf-modsec-metrics"   3 1  # 집계 메트릭
 
-# ===== Define For KSQL =====
-create_topic "waf-modsec-raw"       6 1
-create_topic "waf-rulemap"          6 1 "cleanup.policy=compact"
-create_topic "waf-modsec-enriched"  6 1
-create_topic "waf-modsec-metrics"   3 1
+# ===== Real-time Track (Redis Streams 사용) =====
+# Redis Streams: waf-realtime-events
+
+# ===== Lookup Tables =====
+create_topic "waf-rulemap"          6 1 "cleanup.policy=compact"  # 룰 메타데이터
+
+# ===== Archive & Backup =====
+create_topic "waf-archive"          3 1 "retention.ms=2592000000"  # 30일 보존
