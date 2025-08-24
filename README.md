@@ -1,30 +1,32 @@
-# 🛡️ Enterprise Web Application Firewall (WAF) Platform
+# 🛡️ 엔터프라이즈 웹 애플리케이션 방화벽 (WAF) 플랫폼
 
 ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![Status](https://img.shields.io/badge/status-production--ready-green)
 
-**Enterprise-grade Web Application Firewall** powered by **Nginx + ModSecurity + OWASP Core Rule Set (CRS)** with intelligent dual-track log processing, real-time threat detection, and comprehensive security analytics.
+**Nginx + ModSecurity + OWASP CRS (Core Rule Set)**로 구축된 **엔터프라이즈급 웹 애플리케이션 방화벽**으로, 지능형 이중 트랙 로그 처리, 실시간 위협 탐지, 포괄적인 보안 분석 기능을 제공합니다.
 
-## 🌟 Enterprise Features
+[🇺🇸 English Version](README.en.md)
 
-- **🚀 Real-Time Threat Detection** - Sub-second response to critical security events
-- **📊 Dual-Track Architecture** - Separates real-time threats from bulk analytics
-- **🔍 Advanced Analytics** - Stream processing with ksqlDB and ClickHouse OLAP
-- **⚡ High Performance** - Handles 10,000+ requests/second with horizontal scaling
-- **🛡️ Enterprise Security** - RBAC, encryption, audit logging, compliance ready
-- **📈 Comprehensive Monitoring** - Grafana dashboards, Prometheus metrics, alerting
-- **☁️ Cloud Native** - Kubernetes ready with Helm charts and operators
-- **🔧 DevOps Ready** - CI/CD integration, infrastructure as code, GitOps workflow
+## 🌟 주요 기능
+
+- **🚀 실시간 위협 탐지** - 중대한 보안 이벤트에 대한 1초 이내 대응
+- **📊 이중 트랙 아키텍처** - 실시간 위협과 대량 분석 데이터를 분리 처리
+- **🔍 고급 분석** - ksqlDB 스트림 처리와 ClickHouse OLAP 분석
+- **⚡ 고성능** - 수평 확장으로 초당 10,000+ 요청 처리
+- **🛡️ 엔터프라이즈 보안** - RBAC, 암호화, 감사 로깅, 컴플라이언스 지원
+- **📈 종합 모니터링** - Grafana 대시보드, Prometheus 메트릭, 알림
+- **☁️ 클라우드 네이티브** - Kubernetes 지원, Helm 차트 및 오퍼레이터
+- **🔧 DevOps 지원** - CI/CD 통합, 코드형 인프라, GitOps 워크플로
 
 ---
 
-## 📐 Architecture Overview
+## 📐 아키텍처 개요
 
-The WAF platform implements a sophisticated **dual-track architecture** that intelligently routes security events based on threat severity and processing requirements.
+WAF 플랫폼은 위협 심각도와 처리 요구사항에 따라 보안 이벤트를 지능적으로 라우팅하는 **이중 트랙 아키텍처**를 구현합니다.
 
-### High-Level Architecture
+### 고수준 아키텍처
 
 ```mermaid
 flowchart TB
@@ -34,43 +36,43 @@ flowchart TB
     classDef storage fill:#00b894,stroke:#00a085,color:#fff,stroke-width:2
     classDef monitoring fill:#fdcb6e,stroke:#e17055,color:#000,stroke-width:2
 
-    subgraph "🌐 WAF Layer"
-        Client[Client Requests]:::waf
+    subgraph "🌐 WAF 레이어"
+        Client[클라이언트 요청]:::waf
         WAF[Nginx + ModSecurity<br/>OWASP CRS]:::waf
-        Logs[(ModSecurity<br/>Audit Logs)]:::waf
+        Logs[(ModSecurity<br/>감사 로그)]:::waf
     end
 
-    subgraph "🔄 Intelligent Router"
-        FluentBit[Fluent Bit<br/>Lua Classification]:::realtime
+    subgraph "🔄 지능형 라우터"
+        FluentBit[Fluent Bit<br/>Lua 분류]:::realtime
     end
 
-    subgraph "⚡ Real-Time Track"
+    subgraph "⚡ 실시간 트랙"
         RedisStreams[Redis Streams]:::realtime
-        RealtimeProcessor[Go Processor<br/>Threat Analysis]:::realtime
-        InfluxDB[InfluxDB<br/>Time-Series]:::realtime
-        Alerts[Alert Manager<br/>Notifications]:::realtime
+        RealtimeProcessor[Go 프로세서<br/>위협 분석]:::realtime
+        InfluxDB[InfluxDB<br/>시계열 DB]:::realtime
+        Alerts[Alert Manager<br/>알림]:::realtime
     end
 
-    subgraph "📊 Analytics Track"
+    subgraph "📊 분석 트랙"
         Kafka[Kafka Streams]:::analytics
-        KsqlDB[ksqlDB<br/>Stream Processing]:::analytics
-        Logstash[Logstash<br/>ETL Pipeline]:::analytics
-        Elasticsearch[Elasticsearch<br/>Search & Index]:::analytics
-        ClickHouse[ClickHouse<br/>OLAP Analytics]:::analytics
+        KsqlDB[ksqlDB<br/>스트림 처리]:::analytics
+        Logstash[Logstash<br/>ETL 파이프라인]:::analytics
+        Elasticsearch[Elasticsearch<br/>검색 & 색인]:::analytics
+        ClickHouse[ClickHouse<br/>OLAP 분석]:::analytics
     end
 
-    subgraph "📈 Visualization & Monitoring"
-        Kibana[Kibana<br/>Security Dashboard]:::monitoring
-        Grafana[Grafana<br/>Metrics & Alerts]:::monitoring
-        Dashboard[Security Operations<br/>Center]:::monitoring
+    subgraph "📈 시각화 & 모니터링"
+        Kibana[Kibana<br/>보안 대시보드]:::monitoring
+        Grafana[Grafana<br/>메트릭 & 알림]:::monitoring
+        Dashboard[보안 운영<br/>센터]:::monitoring
     end
 
     Client --> WAF
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|High Severity<br/>Anomaly Score ≥ 50| RedisStreams
-    FluentBit -->|Standard Events<br/>Bulk Processing| Kafka
+    FluentBit -->|높은 심각도<br/>이상 점수 ≥ 50| RedisStreams
+    FluentBit -->|일반 이벤트<br/>대량 처리| Kafka
 
     RedisStreams --> RealtimeProcessor
     RealtimeProcessor --> InfluxDB
@@ -87,300 +89,264 @@ flowchart TB
     ClickHouse --> Dashboard
 ```
 
-### Dual-Track Processing Strategy
+### 이중 트랙 처리 전략
 
-| Track | Purpose | Latency | Use Cases |
-|-------|---------|---------|-----------|
-| **Real-Time** | Immediate threat response | < 1 second | Critical attacks, active threats, alerting |
-| **Analytics** | Historical analysis & compliance | 5-30 seconds | Reporting, forensics, trend analysis |
-
-### Key Components
-
-#### 🛡️ **WAF Layer**
-- **Nginx + ModSecurity**: High-performance web application firewall
-- **OWASP CRS**: Industry-standard rule set with 200+ security rules
-- **JSON Audit Logging**: Structured logs for automated processing
-
-#### ⚡ **Real-Time Processing Track**
-- **Fluent Bit + Lua**: Intelligent event classification and routing
-- **Redis Streams**: High-throughput message streaming for critical events
-- **Go Microservice**: Real-time threat analysis and severity scoring
-- **InfluxDB**: Time-series storage for metrics and monitoring
-- **Alert Manager**: Multi-channel notification system
-
-#### 📊 **Analytics Processing Track**
-- **Apache Kafka**: Distributed streaming platform for bulk event processing
-- **ksqlDB**: Stream processing for event enrichment and aggregation
-- **Logstash**: ETL pipeline for data transformation and routing
-- **Elasticsearch**: Full-text search and indexing for security events
-- **ClickHouse**: Column-oriented database for analytical queries
-
-#### 📈 **Monitoring & Visualization**
-- **Grafana**: Real-time metrics dashboards and alerting
-- **Kibana**: Security event exploration and investigation
-- **Custom Dashboards**: Executive reporting and compliance views
+| 트랙 | 목적 | 지연 시간 | 사용 사례 |
+|------|------|-----------|-----------|
+| **실시간** | 즉시 위협 대응 | < 1초 | 중요 공격, 활성 위협, 알림 |
+| **분석** | 과거 분석 및 컴플라이언스 | 5-30초 | 보고서, 포렌식, 트렌드 분석 |
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 빠른 시작 가이드
 
-### Prerequisites
+### 필수 요구사항
 
 - **Docker Engine 20.10+**
 - **Docker Compose v2**
-- **8GB RAM minimum** (16GB recommended for production)
-- **20GB disk space** for logs and data storage
+- **최소 8GB RAM** (프로덕션 환경에서는 16GB 권장)
+- **로그 및 데이터 저장을 위한 20GB 디스크 공간**
 
-### Development Environment
+### 개발 환경 설정
 
 ```bash
-# Clone the repository
-git clone https://github.com/company/enterprise-waf
-cd enterprise-waf
+# 저장소 클론
+git clone https://github.com/rojae/waf
+cd waf
 
-# Start all services
-docker-compose up -d
-
-# Verify deployment
-./scripts/health-check.sh
+# 통합 시작업 스크립트 사용 (권장)
+./startup.sh
 ```
 
-### Production Deployment
+#### startup.sh 사용법
+
+**1. 기본 실행 (빌드 없이)**
+```bash
+./startup.sh
+```
+- 기존 이미지로 빠르게 시작
+
+**2. 전체 빌드 후 실행**
+```bash
+./startup.sh --build
+# 또는
+./startup.sh -b
+```
+- 모든 서비스 빌드 후 시작 (코드 변경사항 반영)
+
+**3. 백엔드만 빌드**
+```bash
+./startup.sh --build-backend
+```
+- waf-dashboard-api, waf-social-api만 빌드
+- Java 코드 변경시 사용
+
+**4. 프론트엔드만 빌드**
+```bash
+./startup.sh --build-frontend
+```
+- waf-frontend만 빌드
+- React/Next.js 코드 변경시 사용
+
+#### 🎯 개발 워크플로우 예시
 
 ```bash
-# Set environment variables
+# Java 백엔드 코드 수정 후
+./startup.sh --build-backend
+
+# 프론트엔드 코드 수정 후  
+./startup.sh --build-frontend
+
+# 전체 시스템 새로 빌드
+./startup.sh --build
+```
+
+### 프로덕션 배포
+
+```bash
+# 환경 변수 설정
 export INFLUXDB_TOKEN="your-secure-token"
 export KAFKA_PASSWORD="your-kafka-password"
 
-# Deploy with production configuration
+# 프로덕션 설정으로 배포
 docker-compose -f docker-compose.prod.yml up -d
 
-# Configure monitoring
+# 모니터링 설정
 ./scripts/setup-monitoring.sh
 ```
 
-### Generate Test Traffic
+### 테스트 트래픽 생성
 
 ```bash
-# Normal request
+# 정상 요청
 curl "http://localhost:8080/"
 
-# Trigger XSS detection (realtime track)
+# XSS 탐지 트리거 (실시간 트랙)
 curl "http://localhost:8080/search?q=<script>alert('xss')</script>"
 
-# Trigger SQL injection (realtime track)
+# SQL 인젝션 트리거 (실시간 트랙)
 curl "http://localhost:8080/login" -d "user=admin' OR 1=1--"
 
-# Scanner simulation (analytics track)
+# 스캐너 시뮬레이션 (분석 트랙)
 curl "http://localhost:8080" -H "User-Agent: Nikto"
 ```
 
 ---
 
-## 🏗️ Service Architecture
+## 🏗️ 서비스 아키텍처
 
-### Core Services
+### 핵심 서비스
 
-| Service | Container | Port | Purpose | Track |
-|---------|-----------|------|---------|-------|
-| **WAF** | `waf-nginx` | 8080 | Web Application Firewall | Both |
-| **Log Router** | `waf-fluent-bit` | 2020 | Intelligent event classification | Both |
-| **Real-time Processor** | `waf-realtime-processor` | - | Threat analysis & alerting | Real-time |
-| **Stream Platform** | `waf-kafka` | 9092 | Event streaming | Analytics |
-| **Stream Processor** | `waf-ksqldb` | 8088 | Stream enrichment | Analytics |
-| **ETL Pipeline** | `waf-logstash` | 5044 | Data transformation | Analytics |
+| 서비스 | 컨테이너 | 포트 | 목적 | 트랙 |
+|---------|----------|------|------|------|
+| **WAF** | `waf-nginx` | 8080 | 웹 애플리케이션 방화벽 | 공통 |
+| **로그 라우터** | `waf-fluent-bit` | 2020 | 지능형 이벤트 분류 | 공통 |
+| **실시간 프로세서** | `waf-realtime-processor` | - | 위협 분석 & 알림 | 실시간 |
+| **스트림 플랫폼** | `waf-kafka` | 9092 | 이벤트 스트리밍 | 분석 |
+| **스트림 프로세서** | `waf-ksqldb` | 8088 | 스트림 강화 | 분석 |
+| **ETL 파이프라인** | `waf-logstash` | 5044 | 데이터 변환 | 분석 |
 
-### Storage Services
+### 저장소 서비스
 
-| Service | Container | Port | Purpose | Data Type |
-|---------|-----------|------|---------|-----------|
-| **Time-Series DB** | `waf-influxdb` | 8086 | Real-time metrics | Time-series |
-| **Search Engine** | `waf-elasticsearch` | 9200 | Security event search | Documents |
-| **Analytics DB** | `waf-clickhouse` | 8123 | OLAP queries | Columnar |
-| **Cache/Streams** | `waf-redis-streams` | 6380 | Real-time events | Key-Value |
-| **Session Store** | `waf-redis` | 6379 | Application state | Key-Value |
+| 서비스 | 컨테이너 | 포트 | 목적 | 데이터 유형 |
+|---------|----------|------|------|-------------|
+| **시계열 DB** | `waf-influxdb` | 8086 | 실시간 메트릭 | 시계열 |
+| **검색 엔진** | `waf-elasticsearch` | 9200 | 보안 이벤트 검색 | 문서 |
+| **분석 DB** | `waf-clickhouse` | 8123 | OLAP 쿼리 | 컬럼형 |
+| **캐시/스트림** | `waf-redis-streams` | 6380 | 실시간 이벤트 | Key-Value |
+| **세션 저장소** | `waf-redis` | 6379 | 애플리케이션 상태 | Key-Value |
 
-### Monitoring & Visualization
+### 모니터링 & 시각화
 
-| Service | Container | Port | Purpose |
-|---------|-----------|------|---------|
-| **Security Dashboard** | `waf-kibana` | 5601 | Event analysis & investigation |
-| **Metrics Dashboard** | `waf-grafana` | 3000 | Performance & health monitoring |
-| **Log Aggregation** | `waf-loki` | 3100 | Centralized logging |
+| 서비스 | 컨테이너 | 포트 | 목적 |
+|---------|----------|------|------|
+| **보안 대시보드** | `waf-kibana` | 5601 | 이벤트 분석 및 조사 |
+| **메트릭 대시보드** | `waf-grafana` | 3000 | 성능 및 상태 모니터링 |
+| **소셜 API** | `waf-social-api` | 8081 | OAuth 인증 서비스 |
+| **대시보드 API** | `waf-dashboard-api` | 8082 | WAF 관리 API |
+| **프론트엔드** | `waf-frontend` | 3001 | 웹 관리 인터페이스 |
 
 ---
 
-## 📊 Data Flow & Topics
+## 📊 데이터 플로우 & 토픽
 
-### Real-Time Track Flow
+### 실시간 트랙 플로우
 ```
-ModSecurity Logs → Fluent Bit → Redis Streams → Go Processor → InfluxDB → Grafana
-                                                           ↓
-                                                        Alerts
+ModSecurity 로그 → Fluent Bit → Redis Streams → Go 프로세서 → InfluxDB → Grafana
+                                                              ↓
+                                                           알림
 ```
 
-### Analytics Track Flow  
+### 분석 트랙 플로우  
 ```
-ModSecurity Logs → Fluent Bit → Kafka Topics → ksqlDB → Enriched Data
+ModSecurity 로그 → Fluent Bit → Kafka 토픽 → ksqlDB → 강화된 데이터
                                      ↓              ↓
                                  Logstash → Elasticsearch → Kibana
                                      ↓
-                                ClickHouse → Analytics Dashboard
+                                ClickHouse → 분석 대시보드
 ```
 
-### Kafka Topics
+### Kafka 토픽
 
-| Topic | Purpose | Retention | Partitions |
-|-------|---------|-----------|------------|
-| `waf-logs` | Raw security events | 7 days | 6 |
-| `waf-modsec-enriched` | Processed events with metadata | 30 days | 6 |
-| `waf-modsec-metrics` | Aggregated metrics | 90 days | 3 |
-| `waf-rulemap` | Rule definitions (compacted) | ∞ | 1 |
+| 토픽 | 목적 | 보존 기간 | 파티션 |
+|------|------|-----------|--------|
+| `waf-logs` | 원시 보안 이벤트 | 7일 | 6 |
+| `waf-modsec-enriched` | 메타데이터가 포함된 처리된 이벤트 | 30일 | 6 |
+| `waf-modsec-metrics` | 집계된 메트릭 | 90일 | 3 |
+| `waf-rulemap` | 룰 정의 (압축) | ∞ | 1 |
 
-### Redis Streams
+### Redis 스트림
 
-| Stream | Purpose | Max Length |
-|--------|---------|------------|
-| `waf-realtime-events` | High-severity security events | 10,000 |
-| `waf-alerts` | Critical alerts for dashboards | 1,000 |
+| 스트림 | 목적 | 최대 길이 |
+|--------|---------|-----------|
+| `waf-realtime-events` | 고위험 보안 이벤트 | 10,000 |
+| `waf-alerts` | 대시보드용 중요 알림 | 1,000 |
 
 ---
 
-## 🔧 Configuration & Tuning
+## 🔧 설정 및 튜닝
 
-### Environment Variables
+### 환경 변수
 
-#### Core Configuration
+#### 핵심 설정
 ```bash
-# WAF Configuration
+# WAF 설정
 WAF_MODE=detection                    # detection|prevention
-WAF_PARANOIA_LEVEL=1                 # 1-4 (higher = more strict)
-WAF_ANOMALY_THRESHOLD=5              # Blocking threshold
-WAF_MAX_FILE_SIZE=10M                # Upload size limit
+WAF_PARANOIA_LEVEL=1                 # 1-4 (높을수록 엄격)
+WAF_ANOMALY_THRESHOLD=5              # 차단 임계값
+WAF_MAX_FILE_SIZE=10M                # 업로드 크기 제한
 
-# Real-time Processing
-REALTIME_SEVERITY_THRESHOLD=80       # Alert threshold
-REDIS_STREAMS_MAXLEN=10000          # Stream retention
-INFLUXDB_RETENTION_POLICY=7d        # Metrics retention
+# 실시간 처리
+REALTIME_SEVERITY_THRESHOLD=80       # 알림 임계값
+REDIS_STREAMS_MAXLEN=10000          # 스트림 보존
+INFLUXDB_RETENTION_POLICY=7d        # 메트릭 보존
 
-# Analytics Configuration  
-KAFKA_RETENTION_HOURS=168           # 7 days default
-ELASTICSEARCH_RETENTION_DAYS=90     # Index lifecycle
-CLICKHOUSE_RETENTION_DAYS=365       # Analytics retention
+# 분석 설정  
+KAFKA_RETENTION_HOURS=168           # 7일 기본값
+ELASTICSEARCH_RETENTION_DAYS=90     # 인덱스 라이프사이클
+CLICKHOUSE_RETENTION_DAYS=365       # 분석 보존
 ```
 
-#### Security & Authentication
+#### 보안 및 인증
 ```bash
-# Database Security
+# 데이터베이스 보안
 INFLUXDB_TOKEN=your-secure-token-here
 ELASTICSEARCH_PASSWORD=your-es-password
 CLICKHOUSE_PASSWORD=your-ch-password
 
-# Kafka Security (Production)
-KAFKA_SASL_USERNAME=waf-producer
-KAFKA_SASL_PASSWORD=your-kafka-password
-KAFKA_SSL_ENABLED=true
-```
-
-### Performance Tuning
-
-#### High Traffic Environments (10k+ RPS)
-```yaml
-# docker-compose.override.yml
-services:
-  nginx:
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-    environment:
-      - NGINX_WORKER_PROCESSES=auto
-      - NGINX_WORKER_CONNECTIONS=4096
-
-  kafka:
-    environment:
-      - KAFKA_NUM_NETWORK_THREADS=8
-      - KAFKA_NUM_IO_THREADS=16
-      - KAFKA_SOCKET_SEND_BUFFER_BYTES=102400
-      - KAFKA_SOCKET_RECEIVE_BUFFER_BYTES=102400
-```
-
-#### Memory Optimization
-```yaml
-services:
-  elasticsearch:
-    environment:
-      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
-  
-  logstash:
-    environment:
-      - "LS_JAVA_OPTS=-Xms1g -Xmx1g"
-      
-  clickhouse:
-    environment:
-      - MAX_MEMORY_USAGE=4000000000  # 4GB
+# 소셜 로그인 설정
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+JWT_SECRET=your-jwt-secret-32-bytes
 ```
 
 ---
 
-## 📈 Monitoring & Alerting
+## 📈 모니터링 & 알림
 
-### Health Checks
+### 상태 확인
 
 ```bash
-# Overall system health
+# 전체 시스템 상태
 curl -s http://localhost:8080/health | jq
 
-# Individual service health
+# 개별 서비스 상태
 docker-compose ps
 docker-compose logs -f realtime-processor
 ```
 
-### Key Metrics
+### 주요 메트릭
 
-#### Real-Time Track
-- **Event Processing Rate**: Events/second processed
-- **Severity Distribution**: Critical vs. normal events ratio
-- **Alert Response Time**: Time from detection to notification
-- **False Positive Rate**: Scanner vs. legitimate threat ratio
+#### 실시간 트랙
+- **이벤트 처리율**: 초당 처리된 이벤트 수
+- **심각도 분포**: 중요 vs 일반 이벤트 비율
+- **알림 응답 시간**: 탐지부터 알림까지의 시간
+- **가양성율**: 스캐너 vs 실제 위협 비율
 
-#### Analytics Track
-- **Throughput**: Messages/second through Kafka
-- **Consumer Lag**: Processing delay in stream pipeline
-- **Storage Growth**: Data retention and cleanup effectiveness
-- **Query Performance**: Dashboard and report response times
+#### 분석 트랙
+- **처리량**: Kafka를 통한 초당 메시지 수
+- **컨슈머 지연**: 스트림 파이프라인의 처리 지연
+- **저장소 증가**: 데이터 보존 및 정리 효율성
+- **쿼리 성능**: 대시보드 및 보고서 응답 시간
 
-### Grafana Dashboards
+### Grafana 대시보드
 
-Access Grafana at `http://localhost:3000` (admin/admin)
+`http://localhost:3000`에서 Grafana 접속 (admin/admin)
 
-1. **WAF Overview**: High-level security metrics and KPIs
-2. **Real-Time Threats**: Active attacks and critical events
-3. **System Performance**: Infrastructure health and resource usage
-4. **Compliance Reports**: Security posture and audit trails
-
-### Alerting Rules
-
-#### Critical Alerts (PagerDuty/SMS)
-- Multiple SQLi attempts from same IP (>5 in 1 minute)
-- Successful authentication bypass attempts
-- System component failures (database down, etc.)
-
-#### Warning Alerts (Email/Slack)
-- High false positive rate (>50%)
-- Unusual traffic patterns
-- Storage capacity warnings (>80% full)
+1. **WAF 개요**: 고수준 보안 메트릭 및 KPI
+2. **실시간 위협**: 활성 공격 및 중요 이벤트
+3. **시스템 성능**: 인프라 상태 및 리소스 사용량
+4. **컴플라이언스 보고서**: 보안 상태 및 감사 추적
 
 ---
 
-## 🛠️ Operations & Maintenance
+## 🛠️ 운영 및 유지보수
 
-### Log Management
+### 로그 관리
 
-#### Log Rotation
+#### 로그 로테이션
 ```bash
-# Configure in docker-compose.yml
+# docker-compose.yml에서 설정
 services:
   nginx:
     logging:
@@ -390,9 +356,9 @@ services:
         max-file: "5"
 ```
 
-#### Log Analysis
+#### 로그 분석
 ```bash
-# Search for specific attack patterns
+# 특정 공격 패턴 검색
 curl -X GET "localhost:9200/waf-logs-*/_search" -H 'Content-Type: application/json' -d'
 {
   "query": {
@@ -406,405 +372,198 @@ curl -X GET "localhost:9200/waf-logs-*/_search" -H 'Content-Type: application/js
 }'
 ```
 
-### Backup & Recovery
+### 백업 및 복구
 
-#### Database Backups
+#### 데이터베이스 백업
 ```bash
-# InfluxDB backup
+# InfluxDB 백업
 docker exec influxdb influx backup /backups/$(date +%Y%m%d)
 
-# Elasticsearch backup
+# Elasticsearch 백업
 curl -X PUT "localhost:9200/_snapshot/backup_repo/snapshot_$(date +%Y%m%d)"
 
-# ClickHouse backup  
+# ClickHouse 백업  
 docker exec clickhouse clickhouse-backup create
 ```
 
-#### Configuration Backup
-```bash
-# Backup all configurations
-tar -czf waf-config-$(date +%Y%m%d).tar.gz \
-  docker-compose.yml \
-  nginx/ \
-  fluent-bit/ \
-  ksqldb/ \
-  logstash/
-```
+---
 
-### Scaling & Performance
+## 🔒 보안 및 컴플라이언스
 
-#### Horizontal Scaling
-```bash
-# Scale processing components
-docker-compose up -d --scale realtime-processor=3
-docker-compose up -d --scale logstash=2
-```
+### 보안 강화
 
-#### Kubernetes Deployment
-```bash
-# Deploy to Kubernetes
-helm install waf ./charts/enterprise-waf \
-  --set replicaCount=3 \
-  --set resources.requests.cpu=500m \
-  --set resources.requests.memory=1Gi
-```
+#### 네트워크 보안
+- 모든 서비스 간 통신에 TLS 1.3 사용
+- Docker 네트워크를 통한 네트워크 분할 구현
+- 프로덕션 배포용 방화벽 규칙 활성화
+- 원격 액세스용 VPN/배스천 호스트 사용
+
+#### 접근 제어
+- 모든 대시보드에 역할 기반 접근 제어(RBAC)
+- 관리자 액세스용 다단계 인증(MFA)
+- 프로그래밍 액세스용 API 키 인증
+- 정기 액세스 검토 및 권한 순환
 
 ---
 
-## 🔒 Security & Compliance
+## 🧪 테스트 및 검증
 
-### Security Hardening
-
-#### Network Security
-- Use TLS 1.3 for all inter-service communication
-- Implement network segmentation with Docker networks
-- Enable firewall rules for production deployments
-- Use VPN/bastion hosts for remote access
-
-#### Access Control
-- Role-based access control (RBAC) for all dashboards
-- Multi-factor authentication (MFA) for admin access
-- API key authentication for programmatic access
-- Regular access reviews and privilege rotation
-
-#### Data Protection
-- Encrypt sensitive data at rest and in transit
-- Implement data masking for PII (IP addresses, etc.)
-- Regular security scans and vulnerability assessments
-- Compliance with GDPR, SOX, HIPAA requirements
-
-### Compliance Features
-
-#### Audit Logging
-- Complete audit trail of all security events
-- Tamper-evident log storage with digital signatures
-- Long-term retention with write-once-read-many (WORM) storage
-- Regular compliance reports and attestations
-
-#### Data Governance
-- Data classification and labeling
-- Privacy-by-design with configurable data retention
-- Right-to-be-forgotten compliance (data deletion)
-- Cross-border data transfer controls
-
----
-
-## 🧪 Testing & Validation
-
-### Automated Testing Suite
+### 자동화된 테스트 스위트
 
 ```bash
-# Run comprehensive test suite
+# 종합 테스트 스위트 실행
 ./scripts/run-tests.sh
 
-# Test categories
-./scripts/test-waf-rules.sh          # OWASP CRS rule validation
-./scripts/test-performance.sh       # Load testing
-./scripts/test-security.sh          # Penetration testing
-./scripts/test-integration.sh       # End-to-end validation
+# 테스트 범주
+./scripts/test-waf-rules.sh          # OWASP CRS 룰 검증
+./scripts/test-performance.sh       # 로드 테스팅
+./scripts/test-security.sh          # 침투 테스트
+./scripts/test-integration.sh       # 엔드투엔드 검증
 ```
 
-### Security Testing
+### 보안 테스트
 
-#### OWASP Top 10 Validation
+#### OWASP Top 10 검증
 ```bash
-# SQL Injection Tests
+# SQL 인젝션 테스트
 curl -X POST "http://localhost:8080/login" \
   -d "username=admin' OR 1=1--&password=test"
 
-# XSS Tests  
+# XSS 테스트  
 curl "http://localhost:8080/search?q=<script>alert('xss')</script>"
 
-# Command Injection Tests
+# 커맨드 인젝션 테스트
 curl "http://localhost:8080/ping?host=localhost;cat /etc/passwd"
 
-# Path Traversal Tests
+# 패스 트래버설 테스트
 curl "http://localhost:8080/file?path=../../../../etc/passwd"
-```
-
-#### Scanner Simulation
-```bash
-# Nikto simulation
-curl "http://localhost:8080/" -H "User-Agent: Nikto/2.1.6"
-
-# SQLMap simulation  
-curl "http://localhost:8080/search?id=1" -H "User-Agent: sqlmap/1.4.7"
-
-# Burp Suite simulation
-curl "http://localhost:8080/" -H "User-Agent: Burp"
-```
-
-### Performance Testing
-
-#### Load Testing with Apache Bench
-```bash
-# Baseline performance
-ab -n 10000 -c 100 http://localhost:8080/
-
-# Attack simulation load
-ab -n 1000 -c 10 "http://localhost:8080/search?q=<script>alert(1)</script>"
-```
-
-#### Chaos Engineering
-```bash
-# Simulate component failures
-docker stop waf-kafka
-docker stop waf-elasticsearch  
-docker stop waf-influxdb
-
-# Monitor system recovery and alert generation
 ```
 
 ---
 
-## 🐛 Troubleshooting Guide
+## 🐛 문제 해결 가이드
 
-### Common Issues
+### 일반적인 문제
 
-#### High Memory Usage
+#### 높은 메모리 사용량
 ```bash
-# Check container memory usage
+# 컨테이너 메모리 사용량 확인
 docker stats
 
-# Adjust JVM heap sizes
+# JVM 힙 크기 조정
 export ES_JAVA_OPTS="-Xms2g -Xmx2g"
 export LS_JAVA_OPTS="-Xms1g -Xmx1g"
-
-# Monitor garbage collection
-docker logs waf-elasticsearch | grep -i gc
 ```
 
-#### Connection Timeouts
+#### 연결 시간 초과
 ```bash
-# Check network connectivity
+# 네트워크 연결성 확인
 docker network ls
 docker exec waf-nginx ping kafka
 
-# Verify service health
+# 서비스 상태 확인
 curl -f http://localhost:8088/info    # ksqlDB
 curl -f http://localhost:9200/_health # Elasticsearch
 ```
 
-#### Missing Real-time Events
+#### Redis 연결 문제
 ```bash
-# Check Fluent Bit classification
-docker logs waf-fluent-bit | grep "realtime"
+# Redis 연결 확인
+docker exec waf-social-api ping redis
 
-# Verify Redis Streams
-docker exec waf-redis-streams redis-cli XLEN waf-realtime-events
-
-# Check Go processor logs
-docker logs waf-realtime-processor | tail -100
-```
-
-#### Kafka Consumer Lag
-```bash
-# Check consumer group status
-docker exec waf-kafka kafka-consumer-groups \
-  --bootstrap-server kafka:9092 --describe --group ls-waf-analytics
-
-# Reset consumer position if needed
-docker exec waf-kafka kafka-consumer-groups \
-  --bootstrap-server kafka:9092 --group ls-waf-analytics --reset-offsets \
-  --to-earliest --topic waf-logs --execute
-```
-
-### Debug Mode
-
-#### Enable Verbose Logging
-```bash
-# Set debug environment variables
-export LOG_LEVEL=debug
-export FLUENT_BIT_LOG_LEVEL=trace
-export LOGSTASH_LOG_LEVEL=debug
-
-# Restart services with debug logging
-docker-compose restart
-```
-
-#### Performance Profiling
-```bash
-# Generate heap dump for Java services
-docker exec waf-elasticsearch jcmd 1 GC.run_finalization
-docker exec waf-logstash jcmd 1 Thread.print
-
-# Profile Go service
-docker exec waf-realtime-processor go tool pprof http://localhost:6060/debug/pprof/profile
+# Redis 서비스 재시작
+docker-compose restart waf-redis waf-social-api
 ```
 
 ---
 
-## 📚 Documentation & Resources
+## 🚀 빠른 명령어
 
-### API Documentation
+### 서비스 관리
+```bash
+# 특정 서비스만 재시작
+docker-compose restart waf-social-api
 
-#### InfluxDB Queries
-```sql
--- Real-time threat metrics
-SELECT mean("severity") FROM "waf_events" 
-WHERE time >= now() - 1h 
-GROUP BY time(1m), "severity_level"
+# Redis와 social-api 함께 재시작  
+docker-compose restart waf-redis waf-social-api
 
--- Attack patterns by IP
-SELECT count(*) FROM "waf_events" 
-WHERE time >= now() - 24h 
-GROUP BY "client_ip", "rule_id"
+# 전체 재시작 (가장 확실한 방법)
+docker-compose down && docker-compose up -d
+
+# 특정 서비스 빌드 후 재시작
+docker-compose build waf-social-api && docker-compose up waf-social-api -d
+
+# 로그 실시간 확인
+docker logs -f waf-social-api
 ```
 
-#### Elasticsearch Queries
-```json
-{
-  "query": {
-    "bool": {
-      "must": [
-        {"range": {"@timestamp": {"gte": "now-1d"}}},
-        {"terms": {"rule.category": ["attack-sqli", "attack-xss"]}}
-      ]
-    }
-  },
-  "aggs": {
-    "attacks_by_hour": {
-      "date_histogram": {
-        "field": "@timestamp",
-        "interval": "1h"
-      }
-    }
-  }
-}
-```
+### 개발 도구
+```bash
+# 프론트엔드 재시작
+docker-compose restart waf-frontend
 
-#### ClickHouse Analytics
-```sql
--- Top attacking IPs
-SELECT client_ip, count(*) as attacks
-FROM waf_analytics.events
-WHERE timestamp >= now() - INTERVAL 24 HOUR
-GROUP BY client_ip
-ORDER BY attacks DESC
-LIMIT 10;
+# 백엔드 API 재시작
+docker-compose restart waf-dashboard-api waf-social-api
 
--- Attack trends
-SELECT 
-    toStartOfHour(timestamp) as hour,
-    rule_category,
-    count(*) as events
-FROM waf_analytics.events
-WHERE timestamp >= now() - INTERVAL 7 DAY
-GROUP BY hour, rule_category
-ORDER BY hour DESC;
-```
-
-### Directory Structure
-
-```
-enterprise-waf/
-├── 📁 charts/                    # Kubernetes Helm charts
-│   └── enterprise-waf/          # Main Helm chart
-├── 📁 config/                   # Configuration files
-│   ├── nginx/                   # Nginx + ModSecurity config
-│   ├── fluent-bit/              # Log routing configuration
-│   ├── ksqldb/                  # Stream processing DDL
-│   └── logstash/                # ETL pipeline configuration
-├── 📁 docs/                     # Documentation
-│   ├── 📖 architecture.md       # System architecture details
-│   ├── 📖 deployment.md         # Deployment guides
-│   ├── 📖 monitoring.md         # Monitoring and alerting
-│   └── 📖 security.md           # Security hardening guide
-├── 📁 scripts/                  # Automation scripts
-│   ├── 🔧 health-check.sh       # System health validation
-│   ├── 🔧 backup.sh             # Backup automation
-│   ├── 🔧 setup-monitoring.sh   # Monitoring setup
-│   └── 🔧 run-tests.sh          # Test automation
-├── 📁 services/                 # Microservices
-│   └── realtime-processor/      # Go real-time processor
-├── 📁 dashboards/               # Monitoring dashboards
-│   ├── grafana/                 # Grafana dashboard configs
-│   └── kibana/                  # Kibana saved objects
-└── 📁 test/                     # Test suites
-    ├── integration/             # Integration tests
-    ├── performance/             # Load testing
-    └── security/                # Security validation
+# 전체 시스템 상태 확인
+docker-compose ps
 ```
 
 ---
 
-## 🤝 Contributing & Support
+## 🤝 기여 및 지원
 
-### Development Workflow
+### 개발 워크플로우
 
-1. **Fork & Clone**: Fork the repository and create a feature branch
-2. **Development**: Implement changes with comprehensive tests
-3. **Testing**: Run full test suite including security validation
-4. **Documentation**: Update relevant documentation and README
-5. **Pull Request**: Submit PR with detailed description and test results
+1. **Fork & Clone**: 저장소를 포크하고 기능 브랜치 생성
+2. **개발**: 포괄적인 테스트와 함께 변경사항 구현
+3. **테스트**: 보안 검증을 포함한 전체 테스트 스위트 실행
+4. **문서화**: 관련 문서 및 README 업데이트
+5. **Pull Request**: 상세한 설명과 테스트 결과를 포함한 PR 제출
 
-### Code Standards
+### 커뮤니티 리소스
 
-- **Go**: Follow effective Go practices with comprehensive documentation
-- **Configuration**: Use YAML/JSON with schema validation
-- **Scripts**: Shell scripts with error handling and logging
-- **Docker**: Multi-stage builds with security best practices
-
-### Community Resources
-
-- **🐛 Bug Reports**: [GitHub Issues](https://github.com/company/enterprise-waf/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/company/enterprise-waf/discussions)
-- **📖 Wiki**: [Project Wiki](https://github.com/company/enterprise-waf/wiki)
-- **📺 Demos**: [YouTube Channel](https://youtube.com/channel/enterprise-waf)
-
-### Enterprise Support
-
-- **📞 24/7 Support**: Available for enterprise customers
-- **🎓 Training**: Professional services and training programs
-- **🚀 Consulting**: Architecture and implementation consulting
-- **📋 SLA**: 99.9% uptime SLA with professional support
+- **🐛 버그 보고**: [GitHub Issues](https://github.com/rojae/waf/issues)
+- **💬 토론**: [GitHub Discussions](https://github.com/rojae/waf/discussions)
+- **📖 위키**: [프로젝트 위키](https://github.com/rojae/waf/wiki)
 
 ---
 
-## 📄 License & Legal
+## 📄 라이센스
 
-### Open Source License
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+이 프로젝트는 MIT 라이센스 하에 배포됩니다. 자세한 내용은 [LICENSE.md](LICENSE.md) 파일을 참조하세요.
 
-### Enterprise License
-Enterprise features and support are available under commercial license. Contact our sales team for enterprise pricing and features.
+### 써드파티 컴포넌트
 
-### Third-Party Components
-
-| Component | License | Purpose |
-|-----------|---------|---------|
-| Nginx | 2-clause BSD | Web server and reverse proxy |
-| ModSecurity | Apache 2.0 | Web application firewall engine |
-| OWASP CRS | Apache 2.0 | Security rule set |
-| Apache Kafka | Apache 2.0 | Event streaming platform |
-| Elasticsearch | Elastic License 2.0 | Search and analytics |
-| InfluxDB | MIT | Time-series database |
-| ClickHouse | Apache 2.0 | Analytical database |
-
-### Security Disclosure
-
-Report security vulnerabilities to [security@company.com](mailto:security@company.com). We follow responsible disclosure practices and will acknowledge your contribution.
+| 컴포넌트 | 라이센스 | 목적 |
+|----------|----------|------|
+| Nginx | 2-clause BSD | 웹 서버 및 리버스 프록시 |
+| ModSecurity | Apache 2.0 | 웹 애플리케이션 방화벽 엔진 |
+| OWASP CRS | Apache 2.0 | 보안 룰 셋 |
+| Apache Kafka | Apache 2.0 | 이벤트 스트리밍 플랫폼 |
+| Elasticsearch | Elastic License 2.0 | 검색 및 분석 |
+| InfluxDB | MIT | 시계열 데이터베이스 |
+| ClickHouse | Apache 2.0 | 분석 데이터베이스 |
 
 ---
 
-## 🏆 Acknowledgments
+## 🏆 감사의 말
 
-### Contributors
-- **Security Team**: Core WAF development and rule optimization
-- **DevOps Team**: Infrastructure automation and monitoring
-- **Data Team**: Analytics pipeline and dashboard development
-- **QA Team**: Testing automation and validation frameworks
+### 기여자
+- **보안 팀**: 핵심 WAF 개발 및 룰 최적화
+- **DevOps 팀**: 인프라 자동화 및 모니터링
+- **데이터 팀**: 분석 파이프라인 및 대시보드 개발
+- **QA 팀**: 테스트 자동화 및 검증 프레임워크
 
-### Special Thanks
-- **OWASP Community**: For the comprehensive Core Rule Set
-- **ModSecurity Team**: For the powerful WAF engine  
-- **Open Source Community**: For the foundational technologies
+### 특별 감사
+- **OWASP 커뮤니티**: 포괄적인 Core Rule Set 제공
+- **ModSecurity 팀**: 강력한 WAF 엔진 제공
+- **오픈 소스 커뮤니티**: 기반 기술 제공
 
 ---
 
 <div align="center">
 
-**⭐ If this project helps secure your infrastructure, please give it a star!**
+**⭐ 이 프로젝트가 인프라 보안에 도움이 되셨다면 스타를 눌러주세요!**
 
 </div>
-
