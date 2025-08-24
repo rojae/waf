@@ -3,9 +3,8 @@ server:
   forward-headers-strategy: framework
 
 spring:
-  redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
+  session:
+    store-type: none
   security:
     oauth2:
       client:

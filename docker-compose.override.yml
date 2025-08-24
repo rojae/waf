@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  # WAF Dashboard API
+  waf-dashboard-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dashboard-api
+    container_name: waf-dashboard-api
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - ELASTICSEARCH_URIS=http://elasticsearch:9200
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-admin-token}
+      - INFLUXDB_ORG=waf-org
+      - INFLUXDB_BUCKET=waf-realtime
+      - GRAFANA_URL=http://grafana:3000
+    volumes:
+      - custom-rules-volume:/app/custom-rules
+      - ./nginx/modsecurity/rules:/app/modsecurity-rules:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # WAF Social API
+  waf-social-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: social-api
+    container_name: waf-social-api
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-waf-super-secret-key-32bytes-long}
+    restart: unless-stopped
+
+  # Next.js Frontend Dashboard
+  waf-frontend:
+    build: ./frontend
+    container_name: waf-frontend
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXTAUTH_URL=http://localhost:3001
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production-secret-key}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - NEXT_PUBLIC_API_URL=http://localhost:8082
+      - NEXT_PUBLIC_SOCIAL_API_URL=http://localhost:8081
+      - SOCIAL_API_URL=http://waf-social-api:8081
+    depends_on:
+      - waf-dashboard-api
+      - waf-social-api
+    restart: unless-stopped
+
+volumes:
+  custom-rules-volume:
