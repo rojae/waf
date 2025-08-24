@@ -1,0 +1,28 @@
+server:
+  port: 8082
+  forward-headers-strategy: framework
+
+spring:
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://accounts.google.com
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-32bytes-len}
+    access-ttl-seconds: 900
+    cookie-name: WAF_AT
+    cookie-domain: ${COOKIE_DOMAIN:localhost}
+  influxdb:
+    url: ${INFLUXDB_URL:http://localhost:8086}
+    token: ${INFLUXDB_TOKEN:admin-token}
+    org: ${INFLUXDB_ORG:waf-org}
+    bucket: ${INFLUXDB_BUCKET:waf-realtime}
+  grafana:
+    url: ${GRAFANA_URL:http://localhost:3000}
+    admin-user: ${GRAFANA_USER:admin}
+    admin-password: ${GRAFANA_PASSWORD:admin}
