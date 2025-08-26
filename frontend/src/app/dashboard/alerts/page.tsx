@@ -4,14 +4,37 @@ import { useEffect, useState } from 'react';
 import { useAuthGuard } from '@/hooks/useAuthGuard';
 import { useRouter } from 'next/navigation';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Bell, BellOff } from 'lucide-react';
+import {
+  Container,
+  Card,
+  CardContent,
+  Typography,
+  AppBar,
+  Toolbar,
+  Button,
+  CircularProgress,
+  Box,
+  Paper,
+  Chip,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Divider,
+  Alert as MuiAlert,
+  Grid
+} from '@mui/material';
+import {
+  ArrowBack,
+  Notifications,
+  NotificationsOff,
+  Warning,
+  Error,
+  Info
+} from '@mui/icons-material';
+
 import { apiClient } from '@/lib/api';
 import { toast } from 'sonner';
-
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
 
 interface Alert {
   id: string;
@@ -82,16 +105,31 @@ export default function AlertsPage() {
     }
   };
 
-  const getSeverityColor = (severity: string): BadgeVariant => {
+  const getSeverityColor = (severity: string): "error" | "warning" | "info" | "success" => {
     switch (severity) {
       case 'CRITICAL':
+        return 'error';
       case 'HIGH':
-        return 'destructive';
+        return 'warning';
       case 'MEDIUM':
-        return 'secondary';
+        return 'info';
       case 'LOW':
       default:
-        return 'outline';
+        return 'success';
+    }
+  };
+
+  const getSeverityIcon = (severity: string) => {
+    switch (severity) {
+      case 'CRITICAL':
+        return <Error color="error" />;
+      case 'HIGH':
+        return <Warning color="warning" />;
+      case 'MEDIUM':
+        return <Info color="info" />;
+      case 'LOW':
+      default:
+        return <Info color="success" />;
     }
   };
 
@@ -107,107 +145,139 @@ export default function AlertsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="text-center">Loading...</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+      <Box sx={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <CircularProgress sx={{ mb: 2 }} />
+          <Typography variant="h6">Loading Alerts...</Typography>
+        </Paper>
+      </Box>
     );
   }
 
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <Box sx={{ minHeight: '100vh', backgroundColor: '#fafafa' }}>
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={() => router.back()}>
-                ← Back
-              </Button>
-              <h1 className="text-xl font-semibold text-gray-900">Security Alerts</h1>
-            </div>
-            <div className="flex items-center space-x-2">
-              {streamConnected ? (
-                <Badge variant="secondary" className="flex items-center space-x-1">
-                  <Bell className="h-3 w-3" />
-                  <span>Live</span>
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="flex items-center space-x-1">
-                  <BellOff className="h-3 w-3" />
-                  <span>Disconnected</span>
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppBar position="static" sx={{ backgroundColor: 'white', color: 'text.primary', boxShadow: 1 }}>
+        <Toolbar>
+          <Button
+            startIcon={<ArrowBack />}
+            onClick={() => router.back()}
+            sx={{ mr: 2, color: 'text.primary' }}
+          >
+            Back
+          </Button>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
+            Security Alerts
+          </Typography>
+          {streamConnected ? (
+            <Chip
+              icon={<Notifications />}
+              label="Live"
+              color="success"
+              variant="outlined"
+            />
+          ) : (
+            <Chip
+              icon={<NotificationsOff />}
+              label="Disconnected"
+              color="default"
+              variant="outlined"
+            />
+          )}
+        </Toolbar>
+      </AppBar>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Security Events</CardTitle>
-              <CardDescription>Latest security alerts and notifications</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {alerts.length === 0 ? (
-                <div className="text-center py-8">
-                  <Bell className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No alerts</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    No security alerts have been triggered recently.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {alerts.map((alert, index) => (
-                    <div
-                      key={`${alert.id}-${index}`}
-                      className={`p-4 rounded-lg border ${
-                        alert.severity === 'CRITICAL' || alert.severity === 'HIGH'
-                          ? 'border-red-200 bg-red-50'
-                          : alert.severity === 'MEDIUM'
-                          ? 'border-yellow-200 bg-yellow-50'
-                          : 'border-gray-200 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <Badge variant={getSeverityColor(alert.severity)}>
-                              {alert.severity}
-                            </Badge>
-                            <span className="text-sm text-muted-foreground">
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Card>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="h5" gutterBottom>
+              Recent Security Events
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Latest security alerts and notifications
+            </Typography>
+            
+            {alerts.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <Notifications sx={{ fontSize: 64, color: 'grey.400', mb: 2 }} />
+                <Typography variant="h6" color="textSecondary">
+                  No alerts
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  No security alerts have been triggered recently.
+                </Typography>
+              </Box>
+            ) : (
+              <List sx={{ width: '100%' }}>
+                {alerts.map((alert, index) => (
+                  <Box key={`${alert.id}-${index}`}>
+                    <ListItem alignItems="flex-start" sx={{ px: 0 }}>
+                      <ListItemIcon sx={{ mt: 1 }}>
+                        {getSeverityIcon(alert.severity)}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <Chip
+                              label={alert.severity}
+                              color={getSeverityColor(alert.severity)}
+                              size="small"
+                            />
+                            <Typography variant="body2" color="textSecondary">
                               {formatTimestamp(alert.timestamp)}
-                            </span>
+                            </Typography>
                             {alert.count && alert.count > 1 && (
-                              <Badge variant="outline">{alert.count} events</Badge>
+                              <Chip
+                                label={`${alert.count} events`}
+                                variant="outlined"
+                                size="small"
+                              />
                             )}
-                          </div>
-                          <p className="text-sm text-gray-900 mb-1">{alert.message}</p>
-                          {alert.clientIp && (
-                            <p className="text-xs text-muted-foreground">
-                              Source IP:{' '}
-                              <code className="bg-white px-1 py-0.5 rounded">{alert.clientIp}</code>
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    </div>
+                          </Box>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography variant="body1" sx={{ mb: 1 }}>
+                              {alert.message}
+                            </Typography>
+                            {alert.clientIp && (
+                              <Typography variant="body2" color="textSecondary">
+                                Source IP:{' '}
+                                <Box
+                                  component="code"
+                                  sx={{
+                                    backgroundColor: 'grey.100',
+                                    px: 1,
+                                    py: 0.5,
+                                    borderRadius: 1,
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.875rem'
+                                  }}
+                                >
+                                  {alert.clientIp}
+                                </Box>
+                              </Typography>
+                            )}
+                          </Box>
+                        }
+                      />
+                    </ListItem>
+                    {index < alerts.length - 1 && <Divider />}
+                  </Box>
+                ))}
+              </List>
+            )}
+          </CardContent>
+        </Card>
+      </Container>
+    </Box>
   );
 }

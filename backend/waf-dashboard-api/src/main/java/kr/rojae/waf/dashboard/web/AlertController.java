@@ -1,5 +1,6 @@
 package kr.rojae.waf.dashboard.web;
 
+import kr.rojae.waf.dashboard.service.AlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class AlertController {
 
+    private final AlertService alertService;
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(1);
 
@@ -58,30 +60,7 @@ public class AlertController {
     public ResponseEntity<Map<String, Object>> getRecentAlerts() {
         log.info("GET /api/alerts/recent");
         
-        var alertList = List.of(
-                Map.of(
-                    "id", "1",
-                    "severity", "HIGH", 
-                    "message", "Multiple SQL injection attempts from 192.168.1.100",
-                    "timestamp", LocalDateTime.now().minusMinutes(2),
-                    "count", 5
-                ),
-                Map.of(
-                    "id", "2",
-                    "severity", "MEDIUM",
-                    "message", "XSS attempt blocked from 10.0.0.50", 
-                    "timestamp", LocalDateTime.now().minusMinutes(5),
-                    "count", 1
-                ),
-                Map.of(
-                    "id", "3",
-                    "severity", "LOW",
-                    "message", "Rate limit exceeded for 203.0.113.25",
-                    "timestamp", LocalDateTime.now().minusMinutes(10),
-                    "count", 3
-                )
-        );
-        
+        var alertList = alertService.getRecentAlerts();
         var recentAlerts = Map.<String, Object>of("alerts", alertList);
         
         return ResponseEntity.ok(recentAlerts);

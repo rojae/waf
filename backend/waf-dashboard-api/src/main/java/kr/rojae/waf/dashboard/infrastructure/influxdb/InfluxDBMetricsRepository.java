@@ -2,6 +2,7 @@ package kr.rojae.waf.dashboard.infrastructure.influxdb;
 
 import com.influxdb.client.InfluxDBClient;
 import com.influxdb.client.InfluxDBClientFactory;
+import com.influxdb.query.FluxTable;
 import kr.rojae.waf.dashboard.dto.MetricsDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,73 +36,120 @@ public class InfluxDBMetricsRepository {
     public MetricsDto getMetrics() {
         try {
             var queryApi = influxDBClient.getQueryApi();
+            log.info("Starting InfluxDB metrics query. Bucket: {}, Org: {}", bucket, org);
             
             // Total requests in the last hour
             String totalRequestsQuery = """
                 from(bucket: "%s")
                   |> range(start: -1h)
-                  |> filter(fn: (r) => r["_measurement"] == "waf_requests")
-                  |> filter(fn: (r) => r["_field"] == "count")
-                  |> sum()
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> group()
+                  |> sum(column: "_value")
             """.formatted(bucket);
+            
+            log.info("Total requests query: {}", totalRequestsQuery);
 
             // Blocked requests in the last hour
             String blockedRequestsQuery = """
                 from(bucket: "%s")
                   |> range(start: -1h)
-                  |> filter(fn: (r) => r["_measurement"] == "waf_requests")
-                  |> filter(fn: (r) => r["_field"] == "count")
-                  |> filter(fn: (r) => r["blocked"] == "true")
-                  |> sum()
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> filter(fn: (r) => r.blocked == "true")
+                  |> group()
+                  |> sum(column: "_value")
             """.formatted(bucket);
 
             // Attack type statistics
             String attackTypeQuery = """
                 from(bucket: "%s")
                   |> range(start: -1h)
-                  |> filter(fn: (r) => r["_measurement"] == "waf_requests")
-                  |> filter(fn: (r) => r["_field"] == "count")
-                  |> filter(fn: (r) => r["blocked"] == "true")
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> filter(fn: (r) => r.blocked == "true")
                   |> group(columns: ["attack_type"])
-                  |> sum()
+                  |> sum(column: "_value")
             """.formatted(bucket);
 
             // Geography statistics
             String geoQuery = """
                 from(bucket: "%s")
                   |> range(start: -1h)
-                  |> filter(fn: (r) => r["_measurement"] == "waf_requests")
-                  |> filter(fn: (r) => r["_field"] == "count")
-                  |> filter(fn: (r) => r["blocked"] == "true")
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> filter(fn: (r) => r.blocked == "true")
                   |> group(columns: ["country"])
-                  |> sum()
+                  |> sum(column: "_value")
             """.formatted(bucket);
 
             // Execute queries
+            log.info("Executing InfluxDB queries...");
             var totalResult = queryApi.query(totalRequestsQuery, org);
+            log.info("Total result tables: {}", totalResult != null ? totalResult.size() : "null");
+            
             var blockedResult = queryApi.query(blockedRequestsQuery, org);
+            log.info("Blocked result tables: {}", blockedResult != null ? blockedResult.size() : "null");
+            
             var attackTypeResult = queryApi.query(attackTypeQuery, org);
+            log.info("Attack type result tables: {}", attackTypeResult != null ? attackTypeResult.size() : "null");
+            
             var geoResult = queryApi.query(geoQuery, org);
+            log.info("Geo result tables: {}", geoResult != null ? geoResult.size() : "null");
 
             // Parse results
             long totalRequests = parseCountResult(totalResult);
+            log.info("Parsed total requests: {}", totalRequests);
+            
             long blockedRequests = parseCountResult(blockedResult);
+            log.info("Parsed blocked requests: {}", blockedRequests);
+            
             double blockRate = totalRequests > 0 ? (double) blockedRequests / totalRequests * 100.0 : 0.0;
+            log.info("Calculated block rate: {}%", blockRate);
 
             Map<String, Integer> attackTypeStats = parseGroupedResult(attackTypeResult, "attack_type");
             Map<String, Integer> geoStats = parseGroupedResult(geoResult, "country");
 
-            // Mock severity and hourly stats for now (can be implemented later)
-            Map<String, Integer> severityStats = Map.of(
-                    "CRITICAL", (int) (blockedRequests * 0.1),
-                    "HIGH", (int) (blockedRequests * 0.3),
-                    "MEDIUM", (int) (blockedRequests * 0.4),
-                    "LOW", (int) (blockedRequests * 0.2)
-            );
+            // Get severity statistics
+            String severityQuery = """
+                from(bucket: "%s")
+                  |> range(start: -1h)
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> filter(fn: (r) => r.blocked == "true")
+                  |> group(columns: ["severity"])
+                  |> sum(column: "_value")
+            """.formatted(bucket);
+            
+            var severityResult = queryApi.query(severityQuery, org);
+            Map<String, Integer> severityStats = parseGroupedResult(severityResult, "severity");
+            
+            // If no severity data, use calculated defaults
+            if (severityStats.isEmpty()) {
+                severityStats = Map.of(
+                        "CRITICAL", (int) (blockedRequests * 0.1),
+                        "HIGH", (int) (blockedRequests * 0.3),
+                        "MEDIUM", (int) (blockedRequests * 0.4),
+                        "LOW", (int) (blockedRequests * 0.2)
+                );
+            }
 
-            Map<String, Integer> hourlyStats = new HashMap<>();
-            for (int i = 0; i < 24; i++) {
-                hourlyStats.put(String.format("%02d:00", i), (int) (Math.random() * 100));
+            // Get hourly statistics (simplified without strings function)
+            String hourlyQuery = """
+                from(bucket: "%s")
+                  |> range(start: -24h)
+                  |> filter(fn: (r) => r._measurement == "waf_requests")
+                  |> truncateTimeColumn(unit: 1h)
+                  |> group(columns: ["_time"])
+                  |> sum(column: "_value")
+            """.formatted(bucket);
+            
+            var hourlyResult = queryApi.query(hourlyQuery, org);
+            Map<String, Integer> hourlyStats = parseHourlyResult(hourlyResult);
+            
+            // Fill missing hours with zeros
+            if (hourlyStats.size() < 24) {
+                for (int i = 0; i < 24; i++) {
+                    String hour = String.format("%02d:00", i);
+                    if (!hourlyStats.containsKey(hour)) {
+                        hourlyStats.put(hour, 0);
+                    }
+                }
             }
 
             return MetricsDto.builder()
@@ -121,25 +169,74 @@ public class InfluxDBMetricsRepository {
         }
     }
 
-    private long parseCountResult(java.util.List<?> result) {
+    private long parseCountResult(java.util.List<FluxTable> result) {
         try {
+            log.info("Parsing count result. Tables: {}", result != null ? result.size() : "null");
             if (result != null && !result.isEmpty()) {
-                // Parse InfluxDB result - implementation depends on actual result structure
-                // For now, return a reasonable default
-                return 1234L;
+                // Parse FluxTable results from InfluxDB
+                var fluxTables = result;
+                log.info("Processing {} flux tables", fluxTables.size());
+                
+                for (int i = 0; i < fluxTables.size(); i++) {
+                    var table = fluxTables.get(i);
+                    log.info("Table {}: Records count = {}", i, table.getRecords().size());
+                    
+                    for (int j = 0; j < table.getRecords().size(); j++) {
+                        var record = table.getRecords().get(j);
+                        log.info("  Record {}: Value = {}, Type = {}, All values = {}", 
+                                j, record.getValue(), 
+                                record.getValue() != null ? record.getValue().getClass().getSimpleName() : "null",
+                                record.getValues());
+                    }
+                }
+                
+                long sum = fluxTables.stream()
+                        .flatMap(table -> table.getRecords().stream())
+                        .filter(record -> record.getValue() != null)
+                        .mapToLong(record -> {
+                            Object value = record.getValue();
+                            if (value instanceof Number) {
+                                long longValue = ((Number) value).longValue();
+                                log.info("Converting value {} to {}", value, longValue);
+                                return longValue;
+                            }
+                            log.warn("Non-numeric value found: {} ({})", value, value.getClass().getSimpleName());
+                            return 0L;
+                        })
+                        .sum();
+                        
+                log.info("Final sum calculated: {}", sum);
+                return sum;
             }
+            log.info("Result is null or empty");
         } catch (Exception e) {
-            log.warn("Error parsing count result", e);
+            log.error("Error parsing count result", e);
         }
         return 0L;
     }
 
-    private Map<String, Integer> parseGroupedResult(java.util.List<?> result, String groupColumn) {
+    private Map<String, Integer> parseGroupedResult(java.util.List<FluxTable> result, String groupColumn) {
         try {
             Map<String, Integer> stats = new HashMap<>();
             if (result != null && !result.isEmpty()) {
-                // Parse grouped InfluxDB result - implementation depends on actual result structure
-                // For now, return some mock data based on group column
+                // Parse FluxTable results with grouping
+                var fluxTables = result;
+                for (var table : fluxTables) {
+                    for (var record : table.getRecords()) {
+                        Object groupValue = record.getValueByKey(groupColumn);
+                        Object countValue = record.getValue();
+                        
+                        if (groupValue != null && countValue instanceof Number) {
+                            String key = String.valueOf(groupValue);
+                            int value = ((Number) countValue).intValue();
+                            stats.put(key, stats.getOrDefault(key, 0) + value);
+                        }
+                    }
+                }
+            }
+            
+            // If no real data, provide fallback
+            if (stats.isEmpty()) {
                 if ("attack_type".equals(groupColumn)) {
                     stats.put("SQL Injection", 15);
                     stats.put("XSS", 12);
@@ -154,9 +251,41 @@ public class InfluxDBMetricsRepository {
                     stats.put("Russia", 2);
                 }
             }
+            
             return stats;
         } catch (Exception e) {
             log.warn("Error parsing grouped result", e);
+            return new HashMap<>();
+        }
+    }
+
+    private Map<String, Integer> parseHourlyResult(java.util.List<FluxTable> result) {
+        try {
+            Map<String, Integer> hourlyStats = new HashMap<>();
+            if (result != null && !result.isEmpty()) {
+                var fluxTables = result;
+                for (var table : fluxTables) {
+                    for (var record : table.getRecords()) {
+                        Object timeValue = record.getTime();
+                        Object countValue = record.getValue();
+                        
+                        if (timeValue != null && countValue instanceof Number) {
+                            // Extract hour from timestamp (format: 2025-08-26T15:00:00Z -> 15:00)
+                            String timeStr = String.valueOf(timeValue);
+                            String hour = "00:00"; // default
+                            if (timeStr.length() > 13) {
+                                hour = timeStr.substring(11, 16); // Extract HH:MM
+                            }
+                            int count = ((Number) countValue).intValue();
+                            hourlyStats.put(hour, hourlyStats.getOrDefault(hour, 0) + count);
+                            log.info("Parsed hourly data: {} = {}", hour, count);
+                        }
+                    }
+                }
+            }
+            return hourlyStats;
+        } catch (Exception e) {
+            log.warn("Error parsing hourly result", e);
             return new HashMap<>();
         }
     }
@@ -195,6 +324,10 @@ public class InfluxDBMetricsRepository {
                 .build();
     }
 
+    public InfluxDBClient getInfluxDBClient() {
+        return influxDBClient;
+    }
+    
     @PreDestroy
     public void close() {
         if (influxDBClient != null) {

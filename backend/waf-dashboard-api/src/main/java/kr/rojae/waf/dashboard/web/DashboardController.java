@@ -28,6 +28,37 @@ public class DashboardController {
         MetricsDto metrics = metricsRepository.getMetrics();
         return ResponseEntity.ok(metrics);
     }
+    
+    @GetMapping("/test-influx")
+    public ResponseEntity<String> testInfluxDB() {
+        log.info("GET /api/dashboard/test-influx");
+        
+        try {
+            var queryApi = metricsRepository.getInfluxDBClient().getQueryApi();
+            var query = "from(bucket: \"waf-realtime\") |> range(start: -1h) |> limit(n:5)";
+            var result = queryApi.query(query, "waf-org");
+            
+            StringBuilder sb = new StringBuilder();
+            sb.append("InfluxDB connection successful. Found ").append(
+                result.stream().mapToInt(table -> table.getRecords().size()).sum()
+            ).append(" records\\n\\n");
+            
+            result.forEach(table -> {
+                sb.append("Table: ").append(table.getGroupKey()).append("\\n");
+                table.getRecords().forEach(record -> {
+                    sb.append("  Time: ").append(record.getTime())
+                      .append(", Value: ").append(record.getValue())
+                      .append(", Fields: ").append(record.getValues())
+                      .append("\\n");
+                });
+            });
+            
+            return ResponseEntity.ok(sb.toString());
+        } catch (Exception e) {
+            log.error("InfluxDB connection test failed", e);
+            return ResponseEntity.status(500).body("InfluxDB connection failed: " + e.getMessage());
+        }
+    }
 
     @GetMapping("/logs")
     public ResponseEntity<Page<WafLogDto>> getLogs(

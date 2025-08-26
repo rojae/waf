@@ -193,7 +193,7 @@ services:
       - KAFKA_TOPIC=waf-realtime-events
       - KAFKA_GROUP=realtime-processor
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_TOKEN=WTvMZKlrjS_2ESZWUT6P7ODomNLC8TDya7xI2ZyvsQqpVYy_v-ezzVdEvtb4y956Yw7BMplSqgHXdfd9gs2CBQ==
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
       - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb

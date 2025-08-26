@@ -14,7 +14,7 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - ELASTICSEARCH_URIS=http://elasticsearch:9200
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-admin-token}
+      - INFLUXDB_TOKEN=WTvMZKlrjS_2ESZWUT6P7ODomNLC8TDya7xI2ZyvsQqpVYy_v-ezzVdEvtb4y956Yw7BMplSqgHXdfd9gs2CBQ==
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
       - GRAFANA_URL=http://grafana:3000
@@ -46,10 +46,15 @@ services:
 
   # Next.js Frontend Dashboard
   waf-frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile.dev
     container_name: waf-frontend
     ports:
-      - "3001:3000"
+      - "3001:3001"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     environment:
       - NEXTAUTH_URL=http://localhost:3001
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production-secret-key}
@@ -58,6 +63,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8082
       - NEXT_PUBLIC_SOCIAL_API_URL=http://localhost:8081
       - SOCIAL_API_URL=http://waf-social-api:8081
+      - DASHBOARD_API_URL=http://waf-dashboard-api:8082
     depends_on:
       - waf-dashboard-api
       - waf-social-api

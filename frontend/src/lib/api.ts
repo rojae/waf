@@ -1,9 +1,10 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082'
+const API_BASE_URL = '' // Use relative paths for frontend API routes
 
 export class ApiClient {
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -17,7 +18,7 @@ export class ApiClient {
     return response.json()
   }
 
-  // Dashboard APIs
+  // Dashboard APIs (now proxied through frontend API routes)
   async getMetrics() {
     return this.request('/api/dashboard/metrics')
   }
@@ -110,13 +111,15 @@ export class ApiClient {
     })
   }
 
-  // Alerts APIs
+  // Alerts APIs (proxied through frontend)
   async getRecentAlerts() {
     return this.request('/api/alerts/recent')
   }
 
   createAlertStream() {
-    return new EventSource(`${API_BASE_URL}/api/alerts/stream`)
+    // For SSE streams, we need to go directly to the backend
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082'
+    return new EventSource(`${backendUrl}/api/alerts/stream`)
   }
 }
 
