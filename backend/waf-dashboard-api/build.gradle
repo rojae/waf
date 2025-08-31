@@ -28,6 +28,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security") 
     implementation("org.springframework.boot:spring-boot-starter-data-elasticsearch")
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.kafka:spring-kafka")
     implementation("com.influxdb:influxdb-client-java:7.0.0")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
