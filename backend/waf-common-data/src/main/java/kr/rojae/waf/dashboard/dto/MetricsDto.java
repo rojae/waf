@@ -12,5 +12,6 @@ public record MetricsDto(
         Map<String, Integer> attackTypeStats,
         Map<String, Integer> geoStats,
         Map<String, Integer> severityStats,
-        Map<String, Integer> hourlyStats
+        Map<String, Integer> hourlyStats,
+        Double systemUptime
 ) {}

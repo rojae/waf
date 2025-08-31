@@ -121,7 +121,7 @@ services:
       elasticsearch:
         condition: service_healthy
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://waf-es:9200
     ports:
       - "5601:5601"
       
@@ -196,6 +196,7 @@ services:
       - INFLUXDB_TOKEN=WTvMZKlrjS_2ESZWUT6P7ODomNLC8TDya7xI2ZyvsQqpVYy_v-ezzVdEvtb4y956Yw7BMplSqgHXdfd9gs2CBQ==
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
+      - INFLUXDB_DUAL_WRITE=true
       - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
     volumes:
       - ./lib/geoip/GeoLite2-City:/data:ro

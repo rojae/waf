@@ -1,21 +1,10 @@
 // Package main implements a real-time WAF (Web Application Firewall) event processor.
-//
-// This service consumes high-priority security events from Kafka topics and performs
-// real-time threat analysis, severity scoring, and alerting. It's designed to handle
-// critical security events that require immediate attention, separate from bulk log
-// analytics processing.
-//
-// Key features:
-//   - Real-time consumption of WAF events from Kafka
-//   - Dynamic severity scoring based on OWASP CRS rules and threat intelligence
-//   - Time-series storage in InfluxDB for metrics and monitoring
-//   - Automated alerting for high-severity security events
-//   - Graceful shutdown and fault-tolerant message processing
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -31,30 +20,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Config holds the configuration parameters for the real-time processor service.
-// All configuration values can be set via environment variables with defaults provided.
+// ===== Config =====
 type Config struct {
-	// KafkaBrokers is a comma-separated list of Kafka broker addresses (e.g., "kafka:9092")
-	KafkaBrokers string
-	// KafkaTopic is the topic name to consume WAF events from
-	KafkaTopic string
-	// KafkaGroup is the consumer group ID for Kafka consumer
-	KafkaGroup string
-	// InfluxDBURL is the base URL for InfluxDB API (e.g., "http://localhost:8086")
-	InfluxDBURL string
-	// InfluxDBToken is the authentication token for InfluxDB access
-	InfluxDBToken string
-	// InfluxDBOrg is the organization name in InfluxDB
-	InfluxDBOrg string
-	// InfluxDBBucket is the bucket name where metrics will be stored
+	KafkaBrokers   string
+	KafkaTopic     string
+	KafkaGroup     string
+	InfluxDBURL    string
+	InfluxDBToken  string
+	InfluxDBOrg    string
 	InfluxDBBucket string
-	// GeoIPDBPath is the path to the MaxMind GeoLite2 database file
-	GeoIPDBPath string
+	GeoIPDBPath    string
+	DualWrite      bool
 }
 
-// GeoIPInfo represents geographical information for an IP address.
-// This structure is used to enrich security events with location context
-// for threat intelligence and compliance reporting.
+// ===== DTOs =====
 type GeoIPInfo struct {
 	Country   string  `json:"country"`
 	City      string  `json:"city"`
@@ -62,9 +41,6 @@ type GeoIPInfo struct {
 	Longitude float64 `json:"longitude"`
 }
 
-// ModSecurityEvent represents a security event from ModSecurity WAF.
-// This structure contains both the original transaction data from ModSecurity
-// audit logs and classification metadata added by the Fluent Bit filtering pipeline.
 type ModSecurityEvent struct {
 	Transaction struct {
 		ID           string `json:"id"`
@@ -94,78 +70,91 @@ type ModSecurityEvent struct {
 	} `json:"classification"`
 }
 
-// RealTimeProcessor is the main service struct that handles real-time WAF event processing.
-// It maintains connections to Kafka for event consumption and InfluxDB for metrics storage.
+// ===== Processor =====
 type RealTimeProcessor struct {
 	config       Config
 	kafkaReader  *kafka.Reader
 	influxClient influxdb2.Client
-	writeAPI     api.WriteAPI
+	writeAPI     api.WriteAPI         // async (legacy waf_events)
+	writeBlk     api.WriteAPIBlocking // blocking (waf_requests)
 	logger       *logrus.Logger
 	geoipDB      *geoip2.Reader
 }
 
-// NewRealTimeProcessor creates and initializes a new RealTimeProcessor instance.
-// It establishes connections to Kafka and InfluxDB, configures structured logging,
-// and sets up the InfluxDB write API for efficient batched writes.
+// NewRealTimeProcessor initializes processor.
 func NewRealTimeProcessor(config Config) *RealTimeProcessor {
 	logger := logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetLevel(logrus.DebugLevel)
 
-	// Initialize GeoIP database for IP geolocation lookups
+	// GeoIP
 	var geoipDB *geoip2.Reader
 	if config.GeoIPDBPath != "" {
-		var err error
-		geoipDB, err = geoip2.Open(config.GeoIPDBPath)
-		if err != nil {
-			logger.Warnf("Failed to open GeoIP database: %v. Geographic enrichment disabled.", err)
-			geoipDB = nil
+		if db, err := geoip2.Open(config.GeoIPDBPath); err != nil {
+			logger.Warnf("Failed to open GeoIP database: %v (geo enrichment disabled)", err)
 		} else {
 			logger.Info("GeoIP database loaded successfully")
+			geoipDB = db
 		}
 	}
 
-	// Initialize Kafka reader for consuming events from Kafka topic
+	// Kafka reader
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  strings.Split(config.KafkaBrokers, ","),
-		GroupID:  config.KafkaGroup,
-		Topic:    config.KafkaTopic,
-		MinBytes: 10e3, // 10KB
-		MaxBytes: 10e6, // 10MB
+		Brokers:           strings.Split(config.KafkaBrokers, ","),
+		GroupID:           config.KafkaGroup,
+		Topic:             config.KafkaTopic,
+		MinBytes:          10e3,
+		MaxBytes:          10e6,
+		HeartbeatInterval: 3 * time.Second,
+		SessionTimeout:    45 * time.Second,
+		RebalanceTimeout:  60 * time.Second,
 	})
 
-	// Initialize InfluxDB client connection for storing time-series metrics and events
+	// InfluxDB
 	influxClient := influxdb2.NewClient(config.InfluxDBURL, config.InfluxDBToken)
 	writeAPI := influxClient.WriteAPI(config.InfluxDBOrg, config.InfluxDBBucket)
+	writeBlk := influxClient.WriteAPIBlocking(config.InfluxDBOrg, config.InfluxDBBucket)
+
+	logger.WithFields(logrus.Fields{
+		"kafka_brokers": config.KafkaBrokers,
+		"kafka_topic":   config.KafkaTopic,
+		"kafka_group":   config.KafkaGroup,
+		"influx_url":    config.InfluxDBURL,
+		"influx_org":    config.InfluxDBOrg,
+		"influx_bucket": config.InfluxDBBucket,
+		"dual_write":    config.DualWrite,
+	}).Info("Realtime processor config")
 
 	return &RealTimeProcessor{
 		config:       config,
 		kafkaReader:  reader,
 		influxClient: influxClient,
 		writeAPI:     writeAPI,
+		writeBlk:     writeBlk,
 		logger:       logger,
 		geoipDB:      geoipDB,
 	}
 }
 
-// Start begins the real-time processing service with graceful shutdown support.
-// This method starts consuming Kafka messages in a loop and also starts a goroutine
-// for handling InfluxDB write errors. It blocks until the provided context is cancelled.
+// ===== Start / Close =====
 func (rtp *RealTimeProcessor) Start(ctx context.Context) error {
 	rtp.logger.Info("Starting real-time processor (Kafka mode)...")
 
-	// Handle InfluxDB write errors in a separate goroutine
+	// drain async write errors
 	go rtp.handleInfluxDBErrors(ctx)
 
-	// Consume Kafka messages in a loop
 	for {
 		m, err := rtp.kafkaReader.ReadMessage(ctx)
 		if err != nil {
 			if err == context.Canceled {
 				break
 			}
-			rtp.logger.Errorf("Kafka read error: %v", err)
+			// Rebalance/취소류 잡음은 제외
+			if !isNoise(err) {
+				rtp.logger.Errorf("Kafka read error: %v", err)
+			} else {
+				rtp.logger.Debugf("Kafka transient: %v", err)
+			}
 			continue
 		}
 
@@ -175,13 +164,9 @@ func (rtp *RealTimeProcessor) Start(ctx context.Context) error {
 			continue
 		}
 
-		// Calculate severity
 		severity := rtp.calculateSeverity(event)
-
-		// Store event in InfluxDB
 		rtp.writeToInfluxDB(event, severity)
 
-		// Trigger immediate alert for high-severity security events (severity >= 80)
 		if severity >= 80 {
 			rtp.triggerAlert(event, severity)
 		}
@@ -193,15 +178,38 @@ func (rtp *RealTimeProcessor) Start(ctx context.Context) error {
 			"rule_id":   event.Classification.RuleID,
 		}).Info("Processed real-time event")
 	}
-
 	return nil
 }
 
-// calculateSeverity computes a dynamic threat severity score for security events.
-// The scoring algorithm combines multiple risk factors to prioritize critical threats.
+func (rtp *RealTimeProcessor) Close() {
+	if rtp.writeAPI != nil {
+		rtp.writeAPI.Flush()
+	}
+	if rtp.influxClient != nil {
+		rtp.influxClient.Close()
+	}
+	if rtp.kafkaReader != nil {
+		_ = rtp.kafkaReader.Close()
+	}
+}
+
+// ===== Helper: Kafka noise filter =====
+func isNoise(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(s, "context canceled") ||
+		strings.Contains(s, "deadline exceeded") ||
+		strings.Contains(s, "rebalance") ||
+		strings.Contains(s, "coordinator")
+}
+
+// ===== Logic =====
 func (rtp *RealTimeProcessor) calculateSeverity(event ModSecurityEvent) int {
 	severity := event.Transaction.AnomalyScore
-
 	if event.Classification.RuleID != "" {
 		switch {
 		case strings.HasPrefix(event.Classification.RuleID, "942"): // SQLi
@@ -214,19 +222,14 @@ func (rtp *RealTimeProcessor) calculateSeverity(event ModSecurityEvent) int {
 			severity += 20
 		}
 	}
-
 	if rtp.isHighRiskIP(event.Transaction.ClientIP) {
 		severity += 15
 	}
-
 	return severity
 }
 
-// isHighRiskIP checks if a client IP address is considered high-risk.
-// TODO: Replace with actual threat intelligence integration.
 func (rtp *RealTimeProcessor) isHighRiskIP(ip string) bool {
-	highRiskIPs := []string{"192.168.1.100", "10.0.0.50"}
-	for _, riskIP := range highRiskIPs {
+	for _, riskIP := range []string{"192.168.1.100", "10.0.0.50"} {
 		if ip == riskIP {
 			return true
 		}
@@ -234,12 +237,15 @@ func (rtp *RealTimeProcessor) isHighRiskIP(ip string) bool {
 	return false
 }
 
-// writeToInfluxDB stores processed security events in InfluxDB for time-series analysis.
+// ===== Influx write =====
 func (rtp *RealTimeProcessor) writeToInfluxDB(event ModSecurityEvent, severity int) {
-	// Get geographic information for the client IP
 	geoInfo := rtp.lookupGeoIP(event.Transaction.ClientIP)
+	blocked := rtp.determineBlocked(event.Transaction.Response.HTTPCode, severity)
+	attackType := rtp.mapAttackType(event.Classification.RuleID)
+	ts := rtp.parseEventTime(event)
 
-	p := influxdb2.NewPointWithMeasurement("waf_events").
+	// 1) legacy: waf_events (async)
+	pLegacy := influxdb2.NewPointWithMeasurement("waf_events").
 		AddTag("client_ip", event.Transaction.ClientIP).
 		AddTag("method", event.Transaction.Request.Method).
 		AddTag("rule_id", event.Classification.RuleID).
@@ -252,12 +258,40 @@ func (rtp *RealTimeProcessor) writeToInfluxDB(event ModSecurityEvent, severity i
 		AddField("uri", event.Transaction.Request.URI).
 		AddField("geo_latitude", geoInfo.Latitude).
 		AddField("geo_longitude", geoInfo.Longitude).
-		SetTime(time.Now())
+		SetTime(ts)
+	rtp.writeAPI.WritePoint(pLegacy)
 
-	rtp.writeAPI.WritePoint(p)
+	// 2) new: waf_requests (blocking)
+	if rtp.config.DualWrite {
+		pRequests := influxdb2.NewPointWithMeasurement("waf_requests").
+			AddTag("client_ip", event.Transaction.ClientIP).
+			AddTag("method", event.Transaction.Request.Method).
+			AddTag("rule_id", event.Classification.RuleID).
+			AddTag("attack_type", attackType).
+			AddTag("blocked", map[bool]string{true: "true", false: "false"}[blocked]).
+			AddTag("country", geoInfo.Country).
+			AddTag("city", geoInfo.City).
+			AddTag("severity", rtp.getSeverityLevel(severity)).
+			AddField("count", 1).
+			AddField("anomaly_score", event.Transaction.AnomalyScore).
+			AddField("severity_score", severity).
+			AddField("response_code", event.Transaction.Response.HTTPCode).
+			AddField("uri", event.Transaction.Request.URI).
+			AddField("latitude", geoInfo.Latitude).
+			AddField("longitude", geoInfo.Longitude).
+			SetTime(ts)
+
+		if err := rtp.writeBlk.WritePoint(context.Background(), pRequests); err != nil {
+			rtp.logger.WithError(err).Error("failed to write waf_requests")
+		} else {
+			rtp.logger.WithFields(logrus.Fields{
+				"measurement": "waf_requests",
+				"bucket":      rtp.config.InfluxDBBucket,
+			}).Debug("wrote waf_requests")
+		}
+	}
 }
 
-// getSeverityLevel converts numeric severity scores to categorical labels.
 func (rtp *RealTimeProcessor) getSeverityLevel(severity int) string {
 	switch {
 	case severity >= 80:
@@ -271,38 +305,58 @@ func (rtp *RealTimeProcessor) getSeverityLevel(severity int) string {
 	}
 }
 
-// lookupGeoIP performs geographic IP address lookup using MaxMind GeoLite2 database.
-// Returns geographic information including country, city, and coordinates for threat intelligence.
+func (rtp *RealTimeProcessor) determineBlocked(httpCode, severity int) bool {
+	return httpCode == 403 || severity >= 80
+}
+
+func (rtp *RealTimeProcessor) mapAttackType(ruleID string) string {
+	switch {
+	case strings.HasPrefix(ruleID, "942"):
+		return "sqli"
+	case strings.HasPrefix(ruleID, "941"):
+		return "xss"
+	case strings.HasPrefix(ruleID, "932"):
+		return "rce"
+	case strings.HasPrefix(ruleID, "930"):
+		return "lfi"
+	case strings.HasPrefix(ruleID, "920"):
+		return "protocol"
+	default:
+		return "other"
+	}
+}
+
+func (rtp *RealTimeProcessor) parseEventTime(event ModSecurityEvent) time.Time {
+	for _, c := range []string{
+		strings.TrimSpace(event.Transaction.TimeStamp),
+		strings.TrimSpace(event.Classification.Timestamp),
+	} {
+		if c == "" {
+			continue
+		}
+		for _, l := range []string{
+			time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05Z07:00",
+		} {
+			if t, err := time.Parse(l, c); err == nil {
+				return t
+			}
+		}
+	}
+	return time.Now()
+}
+
 func (rtp *RealTimeProcessor) lookupGeoIP(ipAddr string) GeoIPInfo {
-	rtp.logger.Debugf("GeoIP lookup started for IP: %s", ipAddr)
-
 	if rtp.geoipDB == nil {
-		rtp.logger.Debugf("GeoIP database not available, returning unknown")
 		return GeoIPInfo{Country: "unknown", City: "unknown", Latitude: 0, Longitude: 0}
 	}
-
 	ip := net.ParseIP(ipAddr)
-	if ip == nil {
-		rtp.logger.Debugf("Invalid IP address format: %s", ipAddr)
-		return GeoIPInfo{Country: "unknown", City: "unknown", Latitude: 0, Longitude: 0}
-	}
-
-	// Skip private/local IP addresses as they won't have geographic data
-	if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		rtp.logger.Debugf("IP %s is private/local - IsPrivate: %v, IsLoopback: %v, IsLinkLocal: %v",
-			ipAddr, ip.IsPrivate(), ip.IsLoopback(), ip.IsLinkLocalUnicast())
+	if ip == nil || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return GeoIPInfo{Country: "private", City: "private", Latitude: 0, Longitude: 0}
 	}
-
 	city, err := rtp.geoipDB.City(ip)
 	if err != nil {
-		rtp.logger.Debugf("GeoIP lookup failed for %s: %v", ipAddr, err)
 		return GeoIPInfo{Country: "unknown", City: "unknown", Latitude: 0, Longitude: 0}
 	}
-
-	rtp.logger.Debugf("GeoIP lookup success for %s: Country=%s, City=%s",
-		ipAddr, city.Country.IsoCode, city.City.Names["en"])
-
 	return GeoIPInfo{
 		Country:   city.Country.IsoCode,
 		City:      city.City.Names["en"],
@@ -311,11 +365,8 @@ func (rtp *RealTimeProcessor) lookupGeoIP(ipAddr string) GeoIPInfo {
 	}
 }
 
-// triggerAlert handles immediate notification for critical security events.
-// Current implementation logs critical alerts; in production integrate with Slack, PagerDuty, etc.
 func (rtp *RealTimeProcessor) triggerAlert(event ModSecurityEvent, severity int) {
 	geoInfo := rtp.lookupGeoIP(event.Transaction.ClientIP)
-
 	rtp.logger.WithFields(logrus.Fields{
 		"alert_type":  "CRITICAL_SECURITY_EVENT",
 		"tx_id":       event.Transaction.ID,
@@ -328,7 +379,7 @@ func (rtp *RealTimeProcessor) triggerAlert(event ModSecurityEvent, severity int)
 	}).Warn("🚨 CRITICAL SECURITY ALERT TRIGGERED")
 }
 
-// handleInfluxDBErrors monitors and logs InfluxDB write operation failures.
+// drain async write errors
 func (rtp *RealTimeProcessor) handleInfluxDBErrors(ctx context.Context) {
 	errorsCh := rtp.writeAPI.Errors()
 	for {
@@ -336,27 +387,29 @@ func (rtp *RealTimeProcessor) handleInfluxDBErrors(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case err := <-errorsCh:
-			rtp.logger.Errorf("InfluxDB write error: %v", err)
+			if err != nil {
+				rtp.logger.Errorf("InfluxDB write error: %v", err)
+			}
 		}
 	}
 }
 
-// main initializes and starts the real-time WAF event processor.
-// It handles configuration loading, service initialization, signal handling for
-// graceful shutdown, and error reporting.
+// ===== main =====
 func main() {
 	config := Config{
 		KafkaBrokers:   getEnv("KAFKA_BROKERS", "kafka:9092"),
 		KafkaTopic:     getEnv("KAFKA_TOPIC", "waf-realtime-events"),
 		KafkaGroup:     getEnv("KAFKA_GROUP", "realtime-processor"),
-		InfluxDBURL:    getEnv("INFLUXDB_URL", "http://localhost:8086"),
+		InfluxDBURL:    getEnv("INFLUXDB_URL", "http://waf-influxdb:8086"), // ★ 컨테이너 내 기본값
 		InfluxDBToken:  getEnv("INFLUXDB_TOKEN", "admin-token-change-me"),
 		InfluxDBOrg:    getEnv("INFLUXDB_ORG", "waf-org"),
 		InfluxDBBucket: getEnv("INFLUXDB_BUCKET", "waf-realtime"),
 		GeoIPDBPath:    getEnv("GEOIP_DB_PATH", "/data/GeoLite2-City.mmdb"),
+		DualWrite:      strings.ToLower(getEnv("INFLUXDB_DUAL_WRITE", "true")) == "true",
 	}
 
 	processor := NewRealTimeProcessor(config)
+	defer processor.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := make(chan os.Signal, 1)
@@ -373,10 +426,9 @@ func main() {
 	}
 }
 
-// getEnv retrieves environment variables with fallback to default values.
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func getEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	return defaultValue
+	return def
 }

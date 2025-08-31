@@ -1,10 +1,10 @@
-waf_events,client_ip=8.8.8.8,geo_country=US,geo_city="Mountain View",method=GET,severity_level=low response_code=200,anomaly_score=5,severity=10,latitude=37.3861,longitude=-122.0839 1755972494918017000
-waf_events,client_ip=1.1.1.1,geo_country=AU,geo_city="Sydney",method=POST,severity_level=medium response_code=403,anomaly_score=15,severity=40,latitude=-33.8688,longitude=151.2093 1755972494922012000
-waf_events,client_ip=210.89.160.88,geo_country=KR,geo_city="Seoul",method=GET,severity_level=high response_code=500,anomaly_score=25,severity=70,latitude=37.5665,longitude=126.9780 1755972494927798000
-waf_events,client_ip=91.198.174.192,geo_country=DE,geo_city="Berlin",method=GET,severity_level=critical response_code=502,anomaly_score=30,severity=85,latitude=52.5200,longitude=13.4050 1755972494932746000
-waf_events,client_ip=203.0.113.10,geo_country=JP,geo_city="Tokyo",method=POST,severity_level=high response_code=404,anomaly_score=20,severity=65,latitude=35.6762,longitude=139.6503 1755972494937129000
-waf_events,client_ip=186.192.90.5,geo_country=BR,geo_city="Rio de Janeiro",method=GET,severity_level=medium response_code=200,anomaly_score=10,severity=45,latitude=-22.9068,longitude=-43.1729 1755972494941755000
-waf_events,client_ip=41.77.118.100,geo_country=ZA,geo_city="Cape Town",method=POST,severity_level=low response_code=401,anomaly_score=8,severity=20,latitude=-33.9249,longitude=18.4241 1755972494945661000
-waf_events,client_ip=58.27.61.100,geo_country=IN,geo_city="Mumbai",method=GET,severity_level=high response_code=403,anomaly_score=22,severity=68,latitude=19.0760,longitude=72.8777 1755972494949847000
-waf_events,client_ip=213.180.141.140,geo_country=RU,geo_city="Moscow",method=POST,severity_level=critical response_code=503,anomaly_score=35,severity=90,latitude=55.7558,longitude=37.6173 1755972494954278000
-waf_events,client_ip=62.40.34.50,geo_country=FR,geo_city="Paris",method=GET,severity_level=medium response_code=200,anomaly_score=12,severity=50,latitude=48.8566,longitude=2.3522 1755972494957752000
+waf_events,client_ip=8.8.8.8,geo_country=US,geo_city=MountainView,method=GET,severity_level=low response_code=200i,anomaly_score=5i,severity=10i,latitude=37.3861,longitude=-122.0839 1756642517293060000
+waf_events,client_ip=1.1.1.1,geo_country=AU,geo_city=Sydney,method=POST,severity_level=medium response_code=403i,anomaly_score=15i,severity=40i,latitude=-33.8688,longitude=151.2093 1756642517297088000
+waf_events,client_ip=210.89.160.88,geo_country=KR,geo_city=Seoul,method=GET,severity_level=high response_code=500i,anomaly_score=25i,severity=70i,latitude=37.5665,longitude=126.9780 1756642517303335000
+waf_events,client_ip=91.198.174.192,geo_country=DE,geo_city=Berlin,method=GET,severity_level=critical response_code=502i,anomaly_score=30i,severity=85i,latitude=52.5200,longitude=13.4050 1756642517308778000
+waf_events,client_ip=203.0.113.10,geo_country=JP,geo_city=Tokyo,method=POST,severity_level=high response_code=404i,anomaly_score=20i,severity=65i,latitude=35.6762,longitude=139.6503 1756642517312297000
+waf_events,client_ip=186.192.90.5,geo_country=BR,geo_city=RioDeJaneiro,method=GET,severity_level=medium response_code=200i,anomaly_score=10i,severity=45i,latitude=-22.9068,longitude=-43.1729 1756642517316261000
+waf_events,client_ip=41.77.118.100,geo_country=ZA,geo_city=CapeTown,method=POST,severity_level=low response_code=401i,anomaly_score=8i,severity=20i,latitude=-33.9249,longitude=18.4241 1756642517319434000
+waf_events,client_ip=58.27.61.100,geo_country=IN,geo_city=Mumbai,method=GET,severity_level=high response_code=403i,anomaly_score=22i,severity=68i,latitude=19.0760,longitude=72.8777 1756642517324062000
+waf_events,client_ip=213.180.141.140,geo_country=RU,geo_city=Moscow,method=POST,severity_level=critical response_code=503i,anomaly_score=35i,severity=90i,latitude=55.7558,longitude=37.6173 1756642517329198000
+waf_events,client_ip=62.40.34.50,geo_country=FR,geo_city=Paris,method=GET,severity_level=medium response_code=200i,anomaly_score=12i,severity=50i,latitude=48.8566,longitude=2.3522 1756642517335407000

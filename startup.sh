@@ -62,6 +62,9 @@ fi
 echo "🚀 Phase 1: Starting core infrastructure (Storage & Message Queue)..."
 docker-compose up $BUILD_OPTION -d kafka elasticsearch influxdb clickhouse
 
+echo "✅ Kafka topic ensure check..."
+sh ./kafka/ensure-topics.sh
+
 echo "⏳ Waiting for core services to initialize..."
 sleep 30
 
