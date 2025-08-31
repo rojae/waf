@@ -15,45 +15,52 @@
 - 멀티 테넌트 지원 준비
 - 세션 기반 인증 관리
 
-### **2. 커스텀 WAF 룰 관리**
-- 보안 룰 생성/수정/삭제/활성화
-- 정규식 패턴 기반 룰 정의
-- 우선순위 및 액션 설정 (BLOCK/ALLOW/LOG)
+### **2. 실시간 WAF 메트릭 대시보드** ✅
+- InfluxDB 연동 실시간 데이터 시각화
+- 공격 탐지 통계, 차단/허용 비율
+- Material UI Charts 기반 인터랙티브 차트
+- 실시간 데이터 새로고침
+<!-- 
+### **3. 커스텀 WAF 룰 관리** ⚠️ (백엔드 구현됨, 프론트엔드 UI 기본)
+- ModSecurity 룰 CRUD 작업
+- 룰 활성화/비활성화
+- 룰 우선순위 관리
+- 현재: 기본 UI만 구현, 실제 ModSecurity 연동 필요
 
-### **3. IP 화이트리스트 관리** 
-- 신뢰 IP 주소/서브넷 관리
+### **4. IP 화이트리스트 관리** ⚠️ (백엔드 구현됨, 프론트엔드 UI 기본)
+- IP 주소/서브넷 CRUD 관리
 - CIDR 표기법 지원
-- 개별 IP 및 서브넷 화이트리스트
+- 현재: 기본 UI만 구현, 실제 적용 로직 필요
 
-### **4. 실시간 알림 시스템**
-- Server-Sent Events (SSE) 기반 실시간 알림
-- 심각도별 알림 분류 (CRITICAL/HIGH/MEDIUM/LOW)
-- 브라우저 알림 및 토스트 메시지
+### **5. 실시간 알림 시스템** ⚠️ (부분 구현)
+- Server-Sent Events (SSE) 백엔드 준비됨
+- 심각도별 알림 분류 구조
+- 현재: 프론트엔드 실시간 알림 UI 기본 수준
 
-### **5. WAF 로그 조회 및 분석**
-- Elasticsearch 기반 로그 검색
-- 필터링 (심각도, 공격 유형, IP)
-- 페이지네이션 및 실시간 검색
+### **6. WAF 로그 조회 및 분석** ⚠️ (백엔드 구현됨, 프론트엔드 UI 기본)
+- Elasticsearch 연동 로그 검색
+- 현재: 기본 UI만 구현, 실제 검색/필터링 기능 필요
 
 ### **6. Grafana 대시보드 통합**
 - iframe 임베드로 실시간 차트 표시
 - 기술적 메트릭 시각화
-- 풀스크린 Grafana 대시보드 링크
+- 풀스크린 Grafana 대시보드 링크 -->
 
 ## 🏗️ 기술 스택
 
-### **백엔드**
+### **백엔드** ✅
 - **Spring Boot 3.2.2** (Java 21)
 - **멀티 모듈 구조**: `waf-dashboard-api`, `waf-social-api`, `waf-common-data`
 - **데이터 소스**: Elasticsearch, InfluxDB, Redis
 - **실시간 통신**: Server-Sent Events (SSE)
+- **구현 완료**: 모든 컨트롤러 및 서비스 레이어
 
-### **프론트엔드**
+### **프론트엔드** ⚠️
 - **Next.js 15** (React 19, TypeScript)
-- **인증**: NextAuth.js + Google OAuth
-- **UI**: Tailwind CSS + shadcn/ui
-- **상태 관리**: React Hooks
-- **알림**: Sonner (토스트)
+- **인증**: NextAuth.js + Google OAuth ✅
+- **UI**: Material UI (MUI) + MUI X Charts ✅
+- **상태 관리**: React Hooks ✅
+- **현재 상태**: 기본 UI 구현, 실제 기능 연동 필요
 
 ### **인프라 통합**
 - **Grafana**: 실시간 모니터링 대시보드
@@ -154,11 +161,12 @@ docker-compose up -d
 
 ## 🚀 확장 계획
 
-### **단기 개발**
-- [ ] 실제 Elasticsearch/InfluxDB 연동 (현재 Mock 데이터)
-- [ ] 이메일/Slack 알림 통합
-- [ ] 멀티 테넌트 사용자 관리
-- [ ] 커스텀 룰의 ModSecurity 연동
+### **단기 개발** (우선순위)
+- [ ] **프론트엔드 기능 완성**: 백엔드 API와 실제 연동
+- [ ] **실시간 알림 UI**: SSE 연동 및 브라우저 알림
+- [ ] **로그 검색 기능**: Elasticsearch 쿼리 UI 구현
+- [ ] **룰 관리 고도화**: 실제 ModSecurity 룰 파일 연동
+- [ ] **화이트리스트 적용**: 실제 nginx/ModSecurity 설정 연동
 
 ### **장기 로드맵**
 - [ ] AI 기반 위협 분석
