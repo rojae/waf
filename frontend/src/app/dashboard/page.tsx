@@ -43,6 +43,7 @@ import {
 } from '@mui/icons-material'
 import dynamic from 'next/dynamic'
 import ChartWrapper from '@/components/Charts/ChartWrapper'
+import RealtimeLogs from '@/components/RealtimeLogs'
 
 const PieChart = dynamic(() => import('@mui/x-charts').then(mod => ({ default: mod.PieChart })), {
   ssr: false
@@ -624,6 +625,14 @@ export default function Dashboard() {
               </Box>
             </Stack>
           </Box>
+        </Box>
+
+        {/* Realtime Logs Section */}
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h4" sx={{ mb: 3, fontWeight: 600, color: 'text.primary' }}>
+            ⚡ Realtime Security Logger
+          </Typography>
+          <RealtimeLogs />
         </Box>
 
         {/* Enhanced Grafana Section */}
