@@ -7,6 +7,7 @@
 /GeoLite2-City/*
 lib/geoip/*
 .*/*
+.env
 
 ##############################
 ## Java
