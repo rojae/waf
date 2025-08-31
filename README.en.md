@@ -69,8 +69,8 @@ flowchart TB
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|High Severity<br/>Anomaly Score ≥ 50| RedisStreams
-    FluentBit -->|Standard Events<br/>Bulk Processing| Kafka
+    FluentBit -->|All Events<br/>Real-time Processing| RedisStreams
+    FluentBit -->|All Events<br/>Analytics Processing| Kafka
 
     RedisStreams --> RealtimeProcessor
     RealtimeProcessor --> InfluxDB
@@ -240,6 +240,14 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 | **Cache/Streams** | `waf-redis-streams` | 6380 | Real-time events | Key-Value |
 | **Session Store** | `waf-redis` | 6379 | Application state | Key-Value |
 
+### Application Services
+
+| Service | Container | Port | Purpose |
+|---------|-----------|---------|--------|
+| **Social API** | `waf-social-api` | 8081 | OAuth authentication service |
+| **Dashboard API** | `waf-dashboard-api` | 8082 | WAF management API |
+| **Frontend** | `waf-frontend` | 3001 | Web management interface |
+
 ### Monitoring & Visualization
 
 | Service | Container | Port | Purpose |
@@ -254,9 +262,9 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 
 ### Real-Time Track Flow
 ```
-ModSecurity Logs → Fluent Bit → Redis Streams → Go Processor → InfluxDB → Grafana
-                                                           ↓
-                                                        Alerts
+ModSecurity Logs → Fluent Bit → Kafka → Realtime Processor → InfluxDB → Grafana
+                                                              ↓
+                                                           Alerts
 ```
 
 ### Analytics Track Flow  
@@ -272,17 +280,28 @@ ModSecurity Logs → Fluent Bit → Kafka Topics → ksqlDB → Enriched Data
 
 | Topic | Purpose | Retention | Partitions |
 |-------|---------|-----------|------------|
-| `waf-logs` | Raw security events | 7 days | 6 |
+| `waf-realtime-events` | Real-time security events (all events) | 7 days | 6 |
+| `waf-logs` | Raw security events (analytics) | 7 days | 6 |
 | `waf-modsec-enriched` | Processed events with metadata | 30 days | 6 |
 | `waf-modsec-metrics` | Aggregated metrics | 90 days | 3 |
-| `waf-rulemap` | Rule definitions (compacted) | ∞ | 1 |
+| `waf-alerts` | Critical alerts and warnings | 30 days | 3 |
 
-### Redis Streams
+### Key Improvements ✨
 
-| Stream | Purpose | Max Length |
+#### 🔥 Latest Updates (2025)
+- **Unified Real-time Processing**: All events processed through `waf-realtime-events` topic for real-time analysis
+- **Fluent Bit Optimization**: `Read_From_Head: false` configuration for real-time log tailing
+- **Enhanced Data Pipeline**: WAF Logs → Fluent Bit → Kafka → Realtime Processor → InfluxDB
+- **Real-time Dashboard**: Sub-second metric updates via InfluxDB and Grafana
+- **Improved GeoIP Analysis**: Real-time location-based threat detection
+- **Dual Data Storage**: `waf_events` (legacy) + `waf_requests` (new) measurements
+
+### Redis Cache
+
+| Service | Purpose | Usage |
 |--------|---------|------------|
-| `waf-realtime-events` | High-severity security events | 10,000 |
-| `waf-alerts` | Critical alerts for dashboards | 1,000 |
+| `waf-redis` | Session storage and caching | Application state |
+| `waf-redis-streams` | Stream data caching | Temporary event buffering |
 
 ---
 
@@ -670,6 +689,72 @@ docker exec waf-logstash jcmd 1 Thread.print
 
 # Profile Go service
 docker exec waf-realtime-processor go tool pprof http://localhost:6060/debug/pprof/profile
+```
+
+---
+
+## 🔧 Real-Time Monitoring
+
+### Pipeline Status Checks
+
+```bash
+# Check Kafka topic message count
+docker exec waf-kafka kafka-run-class kafka.tools.GetOffsetShell \
+  --broker-list localhost:9092 --topic waf-realtime-events --time -1
+
+# Check Realtime Processor logs  
+docker logs waf-realtime-processor --tail 20
+
+# Verify InfluxDB data storage
+docker exec waf-influxdb influx query 'SELECT COUNT(*) FROM waf_events'
+
+# Check Fluent Bit health
+curl http://localhost:2020/api/v1/health
+```
+
+### Real-Time Attack Simulation
+
+```bash
+# XSS attack test (processed in real-time)
+curl "http://localhost:8080/?test=<script>alert('realtime')</script>"
+
+# SQL injection test
+curl "http://localhost:8080/search?q=' OR 1=1--"
+
+# Path traversal test
+curl "http://localhost:8080/file?path=../../../etc/passwd"
+
+# Verify real-time processing (wait 2-3 seconds)
+docker logs waf-realtime-processor --tail 5
+```
+
+### Pipeline Debugging
+
+```bash
+# Check if new events reach Kafka
+docker exec waf-kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 --topic waf-realtime-events \
+  --timeout-ms 5000 --from-beginning | tail -1
+
+# Verify Fluent Bit is reading logs  
+docker logs waf-fluent-bit --tail 10
+
+# Check ModSecurity log generation
+docker exec waf-nginx tail -1 /var/log/modsecurity/modsec_audit.json
+```
+
+### Performance Monitoring
+
+```bash
+# Check data processing rates
+docker exec waf-kafka kafka-consumer-groups \
+  --bootstrap-server localhost:9092 --describe --group realtime-processor
+
+# Monitor InfluxDB write performance
+docker exec waf-influxdb influx query 'SHOW MEASUREMENTS'
+
+# View real-time metrics in Grafana
+open http://localhost:3000/d/waf-realtime
 ```
 
 ---

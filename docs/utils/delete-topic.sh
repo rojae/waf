@@ -53,6 +53,5 @@ topic_exists "waf-modsec-raw"       && purge_normal  "waf-modsec-raw"       || e
 topic_exists "waf-modsec-enriched"  && purge_normal  "waf-modsec-enriched"  || echo "skip: waf-modsec-enriched"
 topic_exists "waf-modsec-metrics"   && purge_normal  "waf-modsec-metrics"   || echo "skip: waf-modsec-metrics"
 topic_exists "waf-logs"             && purge_normal  "waf-logs"             || echo "skip: waf-logs"
-
 # compact
 topic_exists "waf-rulemap"          && purge_compact "waf-rulemap"          || echo "skip: waf-rulemap"

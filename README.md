@@ -71,8 +71,8 @@ flowchart TB
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|높은 심각도<br/>이상 점수 ≥ 50| RedisStreams
-    FluentBit -->|일반 이벤트<br/>대량 처리| Kafka
+    FluentBit -->|모든 이벤트<br/>실시간 처리| RedisStreams
+    FluentBit -->|모든 이벤트<br/>분석 처리| Kafka
 
     RedisStreams --> RealtimeProcessor
     RealtimeProcessor --> InfluxDB
@@ -232,7 +232,7 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 
 ### 실시간 트랙 플로우
 ```
-ModSecurity 로그 → Fluent Bit → Redis Streams → Go 프로세서 → InfluxDB → Grafana
+ModSecurity 로그 → Fluent Bit → Kafka → Realtime Processor → InfluxDB → Grafana
                                                               ↓
                                                            알림
 ```
@@ -250,17 +250,28 @@ ModSecurity 로그 → Fluent Bit → Kafka 토픽 → ksqlDB → 강화된 데�
 
 | 토픽 | 목적 | 보존 기간 | 파티션 |
 |------|------|-----------|--------|
-| `waf-logs` | 원시 보안 이벤트 | 7일 | 6 |
+| `waf-realtime-events` | 실시간 보안 이벤트 (모든 이벤트) | 7일 | 6 |
+| `waf-logs` | 원시 보안 이벤트 (분석용) | 7일 | 6 |
 | `waf-modsec-enriched` | 메타데이터가 포함된 처리된 이벤트 | 30일 | 6 |
 | `waf-modsec-metrics` | 집계된 메트릭 | 90일 | 3 |
-| `waf-rulemap` | 룰 정의 (압축) | ∞ | 1 |
+| `waf-alerts` | 중요 알림 및 경고 | 30일 | 3 |
 
-### Redis 스트림
+### 주요 개선사항 ✨
 
-| 스트림 | 목적 | 최대 길이 |
+#### 🔥 최신 업데이트 (2025년)
+- **통합 실시간 처리**: 모든 이벤트가 `waf-realtime-events` 토픽을 통해 실시간 처리
+- **Fluent Bit 최적화**: `Read_From_Head: false` 설정으로 실시간 로그 테일링 구현
+- **향상된 데이터 파이프라인**: WAF 로그 → Fluent Bit → Kafka → Realtime Processor → InfluxDB
+- **실시간 대시보드**: InfluxDB와 Grafana를 통한 1초 이내 메트릭 업데이트
+- **개선된 지오IP 분석**: 실시간 위치 기반 위협 탐지
+- **이중 데이터 저장**: `waf_events` (레거시) + `waf_requests` (신규) 측정
+
+### Redis 캐시
+
+| 서비스 | 목적 | 사용량 |
 |--------|---------|-----------|
-| `waf-realtime-events` | 고위험 보안 이벤트 | 10,000 |
-| `waf-alerts` | 대시보드용 중요 알림 | 1,000 |
+| `waf-redis` | 세션 저장 및 캐시 | 애플리케이션 상태 |
+| `waf-redis-streams` | 스트림 데이터 캐시 | 임시 이벤트 버퍼링 |
 
 ---
 
@@ -476,6 +487,56 @@ docker-compose restart waf-redis waf-social-api
 ```
 
 ---
+
+## 🔧 실시간 모니터링
+
+### 데이터 파이프라인 상태 확인
+
+```bash
+# Kafka 토픽 메시지 수 확인
+docker exec waf-kafka kafka-run-class kafka.tools.GetOffsetShell \
+  --broker-list localhost:9092 --topic waf-realtime-events --time -1
+
+# Realtime Processor 로그 확인  
+docker logs waf-realtime-processor --tail 20
+
+# InfluxDB에 저장된 데이터 확인
+docker exec waf-influxdb influx query 'SELECT COUNT(*) FROM waf_events'
+
+# Fluent Bit 상태 확인
+curl http://localhost:2020/api/v1/health
+```
+
+### 실시간 공격 시뮬레이션
+
+```bash
+# XSS 공격 테스트 (실시간 처리됨)
+curl "http://localhost:8080/?test=<script>alert('realtime')</script>"
+
+# SQL 인젝션 테스트
+curl "http://localhost:8080/search?q=' OR 1=1--"
+
+# 패스 트래버설 테스트
+curl "http://localhost:8080/file?path=../../../etc/passwd"
+
+# 실시간 처리 확인 (2-3초 후)
+docker logs waf-realtime-processor --tail 5
+```
+
+### 파이프라인 디버깅
+
+```bash
+# 새 이벤트가 Kafka에 도달하는지 확인
+docker exec waf-kafka kafka-console-consumer \
+  --bootstrap-server localhost:9092 --topic waf-realtime-events \
+  --timeout-ms 5000 --from-beginning | tail -1
+
+# Fluent Bit이 로그를 읽고 있는지 확인  
+docker logs waf-fluent-bit --tail 10
+
+# ModSecurity 로그 생성 확인
+docker exec waf-nginx tail -1 /var/log/modsecurity/modsec_audit.json
+```
 
 ## 🚀 빠른 명령어
 
