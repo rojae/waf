@@ -11,26 +11,26 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/session")
 public class SessionController {
 
-    private final SessionUseCase useCase;
+    private final SessionUseCase sessionUseCase;
 
     @GetMapping("/is-alive")
     public ResponseEntity<?> isAlive(
             @CookieValue(name = "${app.jwt.cookie-name:ACCESS_TOKEN}", required = false) String jwt) {
-        var r = useCase.me(jwt);
+        var r = sessionUseCase.me(jwt);
         return ResponseEntity.status(r.status()).body(r.body());
     }
 
     @GetMapping("/me")
     public ResponseEntity<?> me(
             @CookieValue(name = "${app.jwt.cookie-name:ACCESS_TOKEN}", required = false) String jwt) {
-        var r = useCase.me(jwt);
+        var r = sessionUseCase.me(jwt);
         return ResponseEntity.status(r.status()).body(r.body());
     }
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(
             @CookieValue(name = "${app.jwt.cookie-name:ACCESS_TOKEN}", required = false) String jwt) {
-        var r = useCase.logout(jwt);
+        var r = sessionUseCase.logout(jwt);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, r.deleteCookie().toString())
                 .build();

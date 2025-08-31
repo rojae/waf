@@ -8,9 +8,13 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - modsec-logs:/var/log/modsecurity   # shared volume for ModSecurity logs
+      - modsec-logs:/var/log/modsecurity
+      - ./nginx/modsecurity/rules:/etc/modsecurity/rules:ro
+      - custom-rules-volume:/etc/modsecurity/custom-rules
+    # depends_on:
+    #   - waf-dashboard-api
 
-  # Kafka (KRaft mode - no Zookeeper)
+  # Kafka (KRaft mode)
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     container_name: waf-kafka
@@ -47,7 +51,7 @@ services:
       - ./kafka/ensure-topics.sh:/scripts/ensure-topics.sh:ro
     entrypoint: ["/bin/bash","-lc","/scripts/ensure-topics.sh"]
 
-  # ksqlDB (raw -> enriched/metrics/alerts 토픽 생성)
+  # ksqlDB Server
   ksqldb:
     image: confluentinc/cp-ksqldb-server:7.6.6
     container_name: waf-ksqldb
@@ -83,26 +87,13 @@ services:
         condition: service_healthy
     volumes:
       - ./ksqldb/ddl.sql:/scripts/ddl.sql:ro
-      - ./ksqldb/rulemap-init.sql:/scripts/rulemap-init.sql:ro
     entrypoint: >
       bash -lc "
         echo 'ksqldb is healthy. applying DDL...';
-        ksql http://waf-ksqldb:8088 --file /scripts/ddl.sql &&
-        ksql http://waf-ksqldb:8088 --file /scripts/rulemap-init.sql
+        ksql http://waf-ksqldb:8088 --file /scripts/ddl.sql
       "
 
-  # Filebeat: tail ModSecurity logs -> Kafka (raw 토픽)
-  filebeat:
-    image: docker.elastic.co/beats/filebeat:8.15.2
-    container_name: waf-filebeat
-    depends_on:
-      - kafka
-      - nginx
-    volumes:
-      - modsec-logs:/var/log/modsecurity:ro
-      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-    command: ["filebeat", "-e", "-strict.perms=false"]
-
+  # Elasticsearch
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.2
     container_name: waf-es
@@ -114,16 +105,27 @@ services:
       - xpack.ml.enabled=false
       - ingest.geoip.downloader.enabled=false
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
+  # Kibana
   kibana:
     image: docker.elastic.co/kibana/kibana:8.15.2
     container_name: waf-kibana
-    depends_on: [elasticsearch]
+    depends_on: 
+      elasticsearch:
+        condition: service_healthy
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://waf-es:9200
     ports:
       - "5601:5601"
       
+  # Logstash
   logstash:
     image: docker.elastic.co/logstash/logstash:8.15.2
     container_name: waf-logstash
@@ -134,21 +136,124 @@ services:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
     environment:
       - LS_JAVA_OPTS=-Xms512m -Xmx512m
-    
-  redis:
-    image: redis:7-alpine
-    container_name: waf-redis
-    ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+
+  # Fluent Bit
+  fluent-bit:
+    image: fluent/fluent-bit:2.2
+    container_name: waf-fluent-bit
+    depends_on:
+      nginx:
+        condition: service_started
+      kafka:
+        condition: service_healthy
     volumes:
-      - redis-data:/data
+      - modsec-logs:/var/log/modsecurity:ro
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./fluent-bit/waf_classifier.lua:/fluent-bit/etc/waf_classifier.lua:ro
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      test: ["CMD", "curl", "-f", "http://localhost:2020/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # InfluxDB for real-time metrics
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: waf-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=waf-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=waf-realtime
+      - DOCKER_INFLUXDB_INIT_RETENTION=7d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Real-time processor
+  realtime-processor:
+    build: ./services/realtime-processor
+    container_name: waf-realtime-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=waf-realtime-events
+      - KAFKA_GROUP=realtime-processor
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=WTvMZKlrjS_2ESZWUT6P7ODomNLC8TDya7xI2ZyvsQqpVYy_v-ezzVdEvtb4y956Yw7BMplSqgHXdfd9gs2CBQ==
+      - INFLUXDB_ORG=waf-org
+      - INFLUXDB_BUCKET=waf-realtime
+      - INFLUXDB_DUAL_WRITE=true
+      - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
+    volumes:
+      - ./lib/geoip/GeoLite2-City:/data:ro
+    restart: unless-stopped
+
+  # Alert processor
+  alert-processor:
+    build: ./services/alert-processor
+    container_name: waf-alert-processor
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: waf-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ClickHouse
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: waf-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=waf_analytics
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=adminpassword
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
 volumes:
   modsec-logs:
-  redis-data:
+  influxdb-data:
+  clickhouse-data:
+  grafana-data:
+  es-data:
+  custom-rules-volume:

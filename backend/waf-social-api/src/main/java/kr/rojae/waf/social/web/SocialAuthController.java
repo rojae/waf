@@ -17,12 +17,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Slf4j
 public class SocialAuthController {
 
-    private final AuthUseCase auth;
+    private final AuthUseCase authUseCase;
 
     @GetMapping("/{provider}/login")
     public String login(@PathVariable String provider, @RequestParam("redirect_uri") String redirectUri) {
         log.info("GET : /{}/login?redirectUri={}", provider, redirectUri);
-        return "redirect:" + auth.startLogin(provider, redirectUri);
+        return "redirect:" + authUseCase.startLogin(provider, redirectUri);
     }
 
     @GetMapping("/{provider}/callback")
@@ -30,7 +30,7 @@ public class SocialAuthController {
                                          @RequestParam String code,
                                          @RequestParam String state) {
         log.info("GET : /{}/callback?code={}&state={}", provider, code, state);
-        var r = auth.handleCallback(provider, code, state);
+        var r = authUseCase.handleCallback(provider, code, state);
         return ResponseEntity.status(302)
                 .header(HttpHeaders.SET_COOKIE, r.cookie().toString())
                 .header(HttpHeaders.LOCATION, r.redirect())

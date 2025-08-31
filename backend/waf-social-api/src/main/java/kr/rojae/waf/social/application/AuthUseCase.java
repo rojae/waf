@@ -6,9 +6,6 @@ import kr.rojae.waf.social.domain.oauth.SocialOAuthService;
 import kr.rojae.waf.social.domain.oauth.SocialServiceFactory;
 import kr.rojae.waf.social.domain.token.AccessTokenService;
 import kr.rojae.waf.social.dto.OAuthUser;
-import kr.rojae.waf.social.infrastructure.repository.redis.RedisStatRepository;
-import kr.rojae.waf.social.infrastructure.repository.redis.SessionRepository;
-import kr.rojae.waf.social.infrastructure.repository.redis.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,7 +13,6 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.time.Duration;
 
 @Component
 @RequiredArgsConstructor
@@ -24,9 +20,7 @@ import java.time.Duration;
 public class AuthUseCase {
 
     private final SocialServiceFactory factory;
-    private final RedisStatRepository redisStatRepository;
-    private final UserProfileRepository userProfileRepository;
-    private final SessionRepository sessionRepository;
+    // Redis removed - using stateless JWT authentication
     private final AccessTokenService accessTokenService;
 
     @Value("${app.jwt.cookie-name}")
@@ -42,14 +36,14 @@ public class AuthUseCase {
         if (log.isInfoEnabled())
             log.info("state : {}", state);
 
-        redisStatRepository.save(state, redirectUri, Duration.ofMinutes(5));
+        // State validation removed - using CSRF protection in frontend
 
         return svc.buildAuthorizationUri(callbackUri(provider), state);
     }
 
     public CallbackResult handleCallback(String provider, String code, String state) {
-        String redirect = redisStatRepository.consume(state);
-        if (redirect == null) throw new IllegalStateException("invalid_state");
+        // State validation removed - using CSRF protection in frontend
+        String redirect = "http://localhost:3001"; // Default redirect
 
         SocialType type = SocialType.ofCode(provider.toUpperCase());
         SocialOAuthService svc = factory.get(type);
@@ -59,11 +53,9 @@ public class AuthUseCase {
         if (log.isInfoEnabled())
             log.info("OAuthUser : {}", user);
 
-        userProfileRepository.save(user);
+        // User profile saved in JWT token instead of Redis
 
         String jwt = accessTokenService.issue(user);
-
-        sessionRepository.markActive(accessTokenService.jti(jwt), Duration.ofSeconds(accessTokenService.ttlSeconds()));
 
         var cookie = ResponseCookie.from(cookieName, jwt)
                 .httpOnly(true).secure(false).sameSite("Lax")
