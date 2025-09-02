@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { COOKIE_NAMES, COOKIE_CONFIG, ENV, HTTP_STATUS } from '@/lib/constants'
 
 export async function POST(request: NextRequest) {
   try {
-    const socialApiUrl = process.env.SOCIAL_API_URL || 'http://waf-social-api:8081'
-    
     // Forward cookies from the request
     const cookieHeader = request.headers.get('cookie')
     
-    const response = await fetch(`${socialApiUrl}/session/logout`, {
+    const response = await fetch(`${ENV.SOCIAL_API_URL}/session/logout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -26,12 +25,9 @@ export async function POST(request: NextRequest) {
     })
     
     // Delete WAF_AT cookie
-    nextResponse.cookies.set('WAF_AT', '', {
+    nextResponse.cookies.set(COOKIE_NAMES.WAF_AT, '', {
       expires: new Date(0),
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
+      ...COOKIE_CONFIG.WAF_AT
     })
     
     return nextResponse
@@ -39,16 +35,13 @@ export async function POST(request: NextRequest) {
     console.error('Session logout proxy error:', error)
     // Even if backend fails, still clear the cookie locally
     const errorResponse = error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED'
-      ? NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
-      : NextResponse.json({ error: 'internal_error' }, { status: 500 })
+      ? NextResponse.json({ error: 'service_unavailable' }, { status: HTTP_STATUS.SERVICE_UNAVAILABLE })
+      : NextResponse.json({ error: 'internal_error' }, { status: HTTP_STATUS.INTERNAL_SERVER_ERROR })
     
     // Delete WAF_AT cookie even on error
-    errorResponse.cookies.set('WAF_AT', '', {
+    errorResponse.cookies.set(COOKIE_NAMES.WAF_AT, '', {
       expires: new Date(0),
-      path: '/',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
+      ...COOKIE_CONFIG.WAF_AT
     })
     
     return errorResponse

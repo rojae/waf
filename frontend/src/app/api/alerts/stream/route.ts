@@ -1,11 +1,10 @@
 import { NextRequest } from 'next/server'
+import { ENV, HTTP_STATUS } from '@/lib/constants'
 
 export async function GET(request: NextRequest) {
   try {
-    const dashboardApiUrl = process.env.DASHBOARD_API_URL || 'http://waf-dashboard-api:8082'
-    
     // Create a new request to the backend
-    const url = new URL(`${dashboardApiUrl}/api/alerts/stream`)
+    const url = new URL(`${ENV.DASHBOARD_API_URL}/api/alerts/stream`)
     const searchParams = request.nextUrl.searchParams
     searchParams.forEach((value, key) => {
       url.searchParams.append(key, value)
@@ -39,8 +38,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error proxying alerts stream:', error)
     // Return service unavailable for connection errors
-    const status = (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') ? 503 : 500
-    const message = status === 503 ? 'Service unavailable' : 'Failed to connect to alerts stream'
+    const status = (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') 
+      ? HTTP_STATUS.SERVICE_UNAVAILABLE 
+      : HTTP_STATUS.INTERNAL_SERVER_ERROR
+    const message = status === HTTP_STATUS.SERVICE_UNAVAILABLE ? 'Service unavailable' : 'Failed to connect to alerts stream'
     
     return new Response(
       JSON.stringify({ error: message }),

@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ENV, HTTP_STATUS } from '@/lib/constants'
 
 export async function GET(request: NextRequest) {
   try {
-    const dashboardApiUrl = process.env.DASHBOARD_API_URL || 'http://waf-dashboard-api:8082'
-    
     // Forward cookies from the request
     const cookieHeader = request.headers.get('cookie')
     
-    const response = await fetch(`${dashboardApiUrl}/api/dashboard/metrics`, {
+    const response = await fetch(`${ENV.DASHBOARD_API_URL}/api/dashboard/metrics`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -24,8 +23,8 @@ export async function GET(request: NextRequest) {
     console.error('Dashboard metrics proxy error:', error)
     // Return service unavailable for connection errors
     if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') {
-      return NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
+      return NextResponse.json({ error: 'service_unavailable' }, { status: HTTP_STATUS.SERVICE_UNAVAILABLE })
     }
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 })
+    return NextResponse.json({ error: 'internal_error' }, { status: HTTP_STATUS.INTERNAL_SERVER_ERROR })
   }
 }
