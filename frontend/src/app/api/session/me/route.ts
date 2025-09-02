@@ -25,6 +25,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Session me proxy error:', error)
+    // Return unauthorized for connection errors (service not available)
+    if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') {
+      return NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
+    }
     return NextResponse.json({ error: 'internal_error' }, { status: 500 })
   }
 }

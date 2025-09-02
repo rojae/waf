@@ -22,6 +22,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Dashboard metrics proxy error:', error)
+    // Return service unavailable for connection errors
+    if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') {
+      return NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
+    }
     return NextResponse.json({ error: 'internal_error' }, { status: 500 })
   }
 }

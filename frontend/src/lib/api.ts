@@ -117,9 +117,8 @@ export class ApiClient {
   }
 
   createAlertStream() {
-    // For SSE streams, we need to go directly to the backend
-    const backendUrl = process.env.DASHBOARD_API_URL || 'http://localhost:8082'
-    return new EventSource(`${backendUrl}/api/alerts/stream`)
+    // Use Next.js API route proxy for SSE streams
+    return new EventSource(`/api/alerts/stream`)
   }
 }
 
