@@ -16,7 +16,7 @@
 - **🔍 고급 분석** - ksqlDB 스트림 처리와 ClickHouse OLAP 분석
 - **⚡ 고성능** - 수평 확장으로 초당 10,000+ 요청 처리
 - **🛡️ 엔터프라이즈 보안** - RBAC, 암호화, 감사 로깅, 컴플라이언스 지원
-- **📈 종합 모니터링** - Grafana 대시보드, Prometheus 메트릭, 알림
+- **📈 종합 모니터링** - Grafana 대시보드, InfluxDB 메트릭, Kibana 분석
 - **☁️ 클라우드 네이티브** - Kubernetes 지원, Helm 차트 및 오퍼레이터
 - **🔧 DevOps 지원** - CI/CD 통합, 코드형 인프라, GitOps 워크플로
 
@@ -47,7 +47,6 @@ flowchart TB
     end
 
     subgraph "⚡ 실시간 트랙"
-        RedisStreams[Redis Streams]:::realtime
         RealtimeProcessor[Go 프로세서<br/>위협 분석]:::realtime
         InfluxDB[InfluxDB<br/>시계열 DB]:::realtime
         Alerts[Alert Manager<br/>알림]:::realtime
@@ -71,10 +70,10 @@ flowchart TB
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|모든 이벤트<br/>실시간 처리| RedisStreams
+    FluentBit -->|모든 이벤트<br/>실시간 처리| Kafka
     FluentBit -->|모든 이벤트<br/>분석 처리| Kafka
 
-    RedisStreams --> RealtimeProcessor
+    Kafka --> RealtimeProcessor
     RealtimeProcessor --> InfluxDB
     RealtimeProcessor --> Alerts
 
@@ -213,18 +212,20 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 | **시계열 DB** | `waf-influxdb` | 8086 | 실시간 메트릭 | 시계열 |
 | **검색 엔진** | `waf-elasticsearch` | 9200 | 보안 이벤트 검색 | 문서 |
 | **분석 DB** | `waf-clickhouse` | 8123 | OLAP 쿼리 | 컬럼형 |
-| **캐시/스트림** | `waf-redis-streams` | 6380 | 실시간 이벤트 | Key-Value |
 | **세션 저장소** | `waf-redis` | 6379 | 애플리케이션 상태 | Key-Value |
 
-### 모니터링 & 시각화
+#### 웹 애플리케이션 서비스
+| 서비스 | 컨테이너 | 포트 | 기술 스택 | 목적 |
+|---------|----------|------|---------|------|
+| **프론트엔드** | `waf-frontend` | 3001 | Next.js + TypeScript | 웹 관리 인터페이스 |
+| **대시보드 API** | `waf-dashboard-api` | 8082 | Spring Boot + Java 21 | WAF 관리 API |
+| **소셜 API** | `waf-social-api` | 8081 | Spring Boot + OAuth2 | OAuth 인증 서비스 |
 
+#### 모니터링 & 분석 서비스
 | 서비스 | 컨테이너 | 포트 | 목적 |
-|---------|----------|------|------|
+|---------|----------|---------|--------|
 | **보안 대시보드** | `waf-kibana` | 5601 | 이벤트 분석 및 조사 |
 | **메트릭 대시보드** | `waf-grafana` | 3000 | 성능 및 상태 모니터링 |
-| **소셜 API** | `waf-social-api` | 8081 | OAuth 인증 서비스 |
-| **대시보드 API** | `waf-dashboard-api` | 8082 | WAF 관리 API |
-| **프론트엔드** | `waf-frontend` | 3001 | 웹 관리 인터페이스 |
 
 ---
 
@@ -271,7 +272,6 @@ ModSecurity 로그 → Fluent Bit → Kafka 토픽 → ksqlDB → 강화된 데�
 | 서비스 | 목적 | 사용량 |
 |--------|---------|-----------|
 | `waf-redis` | 세션 저장 및 캐시 | 애플리케이션 상태 |
-| `waf-redis-streams` | 스트림 데이터 캐시 | 임시 이벤트 버퍼링 |
 
 ---
 
@@ -289,7 +289,6 @@ WAF_MAX_FILE_SIZE=10M                # 업로드 크기 제한
 
 # 실시간 처리
 REALTIME_SEVERITY_THRESHOLD=80       # 알림 임계값
-REDIS_STREAMS_MAXLEN=10000          # 스트림 보존
 INFLUXDB_RETENTION_POLICY=7d        # 메트릭 보존
 
 # 분석 설정  
