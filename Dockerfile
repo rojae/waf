@@ -15,6 +15,7 @@ RUN rm -f \
 # conf copy
 COPY ./nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./nginx/modsecurity/modsecurity.conf /etc/modsecurity/modsecurity.conf
+COPY ./nginx/modsecurity/custom-whitelist.conf /etc/modsecurity/custom-whitelist.conf
 COPY ./nginx/modsecurity/crs-setup.conf /etc/modsecurity.d/crs-setup.conf
 COPY ./nginx/modsecurity/rules /etc/modsecurity.d/rules
 

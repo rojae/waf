@@ -10,6 +10,7 @@ services:
     volumes:
       - modsec-logs:/var/log/modsecurity
       - ./nginx/modsecurity/rules:/etc/modsecurity/rules:ro
+      - ./nginx/modsecurity/custom-whitelist.conf:/etc/modsecurity/custom-whitelist.conf:ro
       - custom-rules-volume:/etc/modsecurity/custom-rules
     # depends_on:
     #   - waf-dashboard-api
