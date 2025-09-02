@@ -17,18 +17,40 @@ export async function POST(request: NextRequest) {
     
     const data = await response.text()
     
-    return new NextResponse(data, {
+    // Create response with cookie deletion
+    const nextResponse = new NextResponse(data, {
       status: response.status,
       headers: {
         'Content-Type': 'application/json'
       }
     })
+    
+    // Delete WAF_AT cookie
+    nextResponse.cookies.set('WAF_AT', '', {
+      expires: new Date(0),
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
+    })
+    
+    return nextResponse
   } catch (error) {
     console.error('Session logout proxy error:', error)
-    // Return service unavailable for connection errors
-    if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') {
-      return NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
-    }
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 })
+    // Even if backend fails, still clear the cookie locally
+    const errorResponse = error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED'
+      ? NextResponse.json({ error: 'service_unavailable' }, { status: 503 })
+      : NextResponse.json({ error: 'internal_error' }, { status: 500 })
+    
+    // Delete WAF_AT cookie even on error
+    errorResponse.cookies.set('WAF_AT', '', {
+      expires: new Date(0),
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
+    })
+    
+    return errorResponse
   }
 }
