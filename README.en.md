@@ -14,7 +14,7 @@
 - **🔍 Advanced Analytics** - Stream processing with ksqlDB and ClickHouse OLAP
 - **⚡ High Performance** - Handles 10,000+ requests/second with horizontal scaling
 - **🛡️ Enterprise Security** - RBAC, encryption, audit logging, compliance ready
-- **📈 Comprehensive Monitoring** - Grafana dashboards, Prometheus metrics, alerting
+- **📈 Comprehensive Monitoring** - Grafana dashboards, InfluxDB metrics, Kibana analytics
 - **☁️ Cloud Native** - Kubernetes ready with Helm charts and operators
 - **🔧 DevOps Ready** - CI/CD integration, infrastructure as code, GitOps workflow
 
@@ -22,7 +22,40 @@
 
 ## 📐 Architecture Overview
 
+**Enterprise-grade Web Application Firewall** implementing microservices architecture based on **Nginx + ModSecurity + OWASP CRS**.
+
 The WAF platform implements a sophisticated **dual-track architecture** that intelligently routes security events based on threat severity and processing requirements.
+
+### 🔧 Technology Stack
+
+#### Backend Services
+- **Java 21** + Spring Boot (Latest)
+- **Spring Security** + OAuth2 Client
+- **Gradle Multi-Module** project structure
+- **InfluxDB Client** for time-series data
+- **Redis** for session management and caching
+
+#### Frontend Application
+- **Next.js 15.5** + React 19.1
+- **TypeScript** + Tailwind CSS v4
+- **MUI Material** + Radix UI Components
+- **NextAuth.js** for authentication system
+
+#### Microservices (Go)
+- **Go 1.21** based high-performance processing
+- **Kafka Consumer** (segmentio/kafka-go)
+- **InfluxDB Writer** for real-time metrics
+- **GeoIP Analysis** (MaxMind GeoLite2)
+
+#### Infrastructure Components
+- **Nginx** + ModSecurity (WAF Engine)
+- **Apache Kafka** 7.6 (Event Streaming)
+- **ksqlDB** 7.6 (Stream Processing)
+- **Elasticsearch** 8.15 (Search/Analytics)
+- **InfluxDB** 2.7 (Time-Series Database)
+- **ClickHouse** 23.8 (OLAP Analytics)
+- **Redis** (Cache and Session Store)
+- **Grafana** 10.4 + **Kibana** 8.15 (Monitoring)
 
 ### High-Level Architecture
 
@@ -45,7 +78,6 @@ flowchart TB
     end
 
     subgraph "⚡ Real-Time Track"
-        RedisStreams[Redis Streams]:::realtime
         RealtimeProcessor[Go Processor<br/>Threat Analysis]:::realtime
         InfluxDB[InfluxDB<br/>Time-Series]:::realtime
         Alerts[Alert Manager<br/>Notifications]:::realtime
@@ -69,10 +101,10 @@ flowchart TB
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|All Events<br/>Real-time Processing| RedisStreams
+    FluentBit -->|All Events<br/>Real-time Processing| Kafka
     FluentBit -->|All Events<br/>Analytics Processing| Kafka
 
-    RedisStreams --> RealtimeProcessor
+    Kafka --> RealtimeProcessor
     RealtimeProcessor --> InfluxDB
     RealtimeProcessor --> Alerts
 
@@ -103,7 +135,7 @@ flowchart TB
 
 #### ⚡ **Real-Time Processing Track**
 - **Fluent Bit + Lua**: Intelligent event classification and routing
-- **Redis Streams**: High-throughput message streaming for critical events
+- **Kafka Streams**: High-throughput message streaming for all events
 - **Go Microservice**: Real-time threat analysis and severity scoring
 - **InfluxDB**: Time-series storage for metrics and monitoring
 - **Alert Manager**: Multi-channel notification system
@@ -237,24 +269,20 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 | **Time-Series DB** | `waf-influxdb` | 8086 | Real-time metrics | Time-series |
 | **Search Engine** | `waf-elasticsearch` | 9200 | Security event search | Documents |
 | **Analytics DB** | `waf-clickhouse` | 8123 | OLAP queries | Columnar |
-| **Cache/Streams** | `waf-redis-streams` | 6380 | Real-time events | Key-Value |
 | **Session Store** | `waf-redis` | 6379 | Application state | Key-Value |
 
-### Application Services
+#### Web Application Services
+| Service | Container | Port | Tech Stack | Purpose |
+|---------|-----------|------|---------|--------|
+| **Frontend** | `waf-frontend` | 3001 | Next.js + TypeScript | Web management interface |
+| **Dashboard API** | `waf-dashboard-api` | 8082 | Spring Boot + Java 21 | WAF management API |
+| **Social API** | `waf-social-api` | 8081 | Spring Boot + OAuth2 | OAuth authentication service |
 
-| Service | Container | Port | Purpose |
-|---------|-----------|---------|--------|
-| **Social API** | `waf-social-api` | 8081 | OAuth authentication service |
-| **Dashboard API** | `waf-dashboard-api` | 8082 | WAF management API |
-| **Frontend** | `waf-frontend` | 3001 | Web management interface |
-
-### Monitoring & Visualization
-
+#### Monitoring & Analytics Services
 | Service | Container | Port | Purpose |
 |---------|-----------|------|---------|
 | **Security Dashboard** | `waf-kibana` | 5601 | Event analysis & investigation |
 | **Metrics Dashboard** | `waf-grafana` | 3000 | Performance & health monitoring |
-| **Log Aggregation** | `waf-loki` | 3100 | Centralized logging |
 
 ---
 
@@ -301,7 +329,6 @@ ModSecurity Logs → Fluent Bit → Kafka Topics → ksqlDB → Enriched Data
 | Service | Purpose | Usage |
 |--------|---------|------------|
 | `waf-redis` | Session storage and caching | Application state |
-| `waf-redis-streams` | Stream data caching | Temporary event buffering |
 
 ---
 
@@ -319,7 +346,6 @@ WAF_MAX_FILE_SIZE=10M                # Upload size limit
 
 # Real-time Processing
 REALTIME_SEVERITY_THRESHOLD=80       # Alert threshold
-REDIS_STREAMS_MAXLEN=10000          # Stream retention
 INFLUXDB_RETENTION_POLICY=7d        # Metrics retention
 
 # Analytics Configuration  
@@ -649,8 +675,8 @@ curl -f http://localhost:9200/_health # Elasticsearch
 # Check Fluent Bit classification
 docker logs waf-fluent-bit | grep "realtime"
 
-# Verify Redis Streams
-docker exec waf-redis-streams redis-cli XLEN waf-realtime-events
+# Verify Kafka topics
+docker exec waf-kafka kafka-topics --bootstrap-server localhost:9092 --list
 
 # Check Go processor logs
 docker logs waf-realtime-processor | tail -100
@@ -819,36 +845,33 @@ GROUP BY hour, rule_category
 ORDER BY hour DESC;
 ```
 
-### Directory Structure
+### Project Structure
 
 ```
-enterprise-waf/
-├── 📁 charts/                    # Kubernetes Helm charts
-│   └── enterprise-waf/          # Main Helm chart
-├── 📁 config/                   # Configuration files
-│   ├── nginx/                   # Nginx + ModSecurity config
-│   ├── fluent-bit/              # Log routing configuration
-│   ├── ksqldb/                  # Stream processing DDL
-│   └── logstash/                # ETL pipeline configuration
-├── 📁 docs/                     # Documentation
-│   ├── 📖 architecture.md       # System architecture details
-│   ├── 📖 deployment.md         # Deployment guides
-│   ├── 📖 monitoring.md         # Monitoring and alerting
-│   └── 📖 security.md           # Security hardening guide
-├── 📁 scripts/                  # Automation scripts
-│   ├── 🔧 health-check.sh       # System health validation
-│   ├── 🔧 backup.sh             # Backup automation
-│   ├── 🔧 setup-monitoring.sh   # Monitoring setup
-│   └── 🔧 run-tests.sh          # Test automation
-├── 📁 services/                 # Microservices
-│   └── realtime-processor/      # Go real-time processor
-├── 📁 dashboards/               # Monitoring dashboards
-│   ├── grafana/                 # Grafana dashboard configs
-│   └── kibana/                  # Kibana saved objects
-└── 📁 test/                     # Test suites
-    ├── integration/             # Integration tests
-    ├── performance/             # Load testing
-    └── security/                # Security validation
+waf/
+├── 📁 backend/                    # Spring Boot microservices
+│   ├── waf-common-data/          # Common DTO/entity module
+│   ├── waf-dashboard-api/        # Dashboard API (8082)
+│   └── waf-social-api/           # OAuth authentication API (8081)
+├── 📁 frontend/                   # Next.js 15 web application (3001)
+│   ├── src/app/                  # App Router structure
+│   ├── src/components/           # Reusable components
+│   ├── src/types/                # TypeScript type definitions
+│   └── src/hooks/                # Custom React hooks
+├── 📁 services/                   # Go microservices
+│   ├── realtime-processor/       # Real-time threat analysis (Go 1.21)
+│   └── alert-processor/          # Alert processing service (Go 1.21)
+├── 📁 nginx/                      # WAF engine configuration
+│   ├── modsecurity/              # ModSecurity settings
+│   └── html/                     # Error pages
+├── 📁 fluent-bit/                # Log collection and routing
+│   ├── waf_classifier.lua        # Lua event classification script
+│   └── realtime_filter.lua       # Real-time filtering
+├── 📁 coreruleset/               # OWASP CRS ruleset
+├── 📁 ksqldb/                    # Stream processing DDL
+├── 📁 clickhouse/                # OLAP analytics DB schema
+├── 📁 lib/geoip/                 # GeoIP database
+└── 📁 docs/                      # Project documentation
 ```
 
 ---

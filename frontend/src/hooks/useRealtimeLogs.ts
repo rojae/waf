@@ -235,8 +235,7 @@ export const useRealtimeLogs = (maxLogs: number = 100) => {
           eventSourceRef.current.close()
         }
 
-        const apiUrl = process.env.DASHBOARD_API_URL || 'http://localhost:8082'
-        const eventSource = new EventSource(`${apiUrl}/api/realtime/logs/stream`, {
+        const eventSource = new EventSource(`/api/realtime/logs/stream`, {
           withCredentials: false
         })
         eventSourceRef.current = eventSource
@@ -351,8 +350,8 @@ export const useRealtimeLogs = (maxLogs: number = 100) => {
     setTimeout(() => {
       const connectToStream = () => {
         try {
-          const apiUrl = process.env.DASHBOARD_API_URL || 'http://localhost:8082'
-          const eventSource = new EventSource(`${apiUrl}/api/realtime/logs/stream`, {
+          // Use Next.js API route proxy
+          const eventSource = new EventSource(`/api/realtime/logs/stream`, {
             withCredentials: false
           })
           eventSourceRef.current = eventSource

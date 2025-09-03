@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ENV } from '@/lib/constants'
+import { ApiErrorHandler } from '@/lib/utils/error-handler'
 
 export async function GET(request: NextRequest) {
   try {
-    const socialApiUrl = process.env.SOCIAL_API_URL || 'http://waf-social-api:8081'
-    
-    // Forward cookies from the request
     const cookieHeader = request.headers.get('cookie')
     
-    const response = await fetch(`${socialApiUrl}/session/me`, {
+    const response = await fetch(`${ENV.SOCIAL_API_URL}/session/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -19,12 +18,14 @@ export async function GET(request: NextRequest) {
     
     return new NextResponse(data, {
       status: response.status,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Content-Type': 'application/json' }
     })
   } catch (error) {
     console.error('Session me proxy error:', error)
-    return NextResponse.json({ error: 'internal_error' }, { status: 500 })
+    const { error: message, status } = ApiErrorHandler.createErrorResponse(
+      error as Error,
+      'internal_error'
+    )
+    return NextResponse.json({ error: message }, { status })
   }
 }
