@@ -1,0 +1,688 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_WAF_INFLUXDB",
+      "label": "WAF_INFLUXDB",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "barchart",
+      "name": "Bar chart",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "geomap",
+      "name": "Geomap",
+      "version": ""
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.3"
+    },
+    {
+      "type": "datasource",
+      "id": "influxdb",
+      "name": "InfluxDB",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 3,
+      "panels": [],
+      "title": "Realtime logs",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "description": "Attack statistics by country (count)",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 7,
+        "x": 0,
+        "y": 1
+      },
+      "id": 7,
+      "options": {
+        "displayLabels": [
+          "name",
+          "value"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^attack_count$/",
+          "limit": 100,
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": "from(bucket: \"waf-realtime\")\n    |> range(start: -6h)\n    |> filter(fn: (r) => r._measurement == \"waf_events\")\n    |> filter(fn: (r) => r._field == \"geo_latitude\")\n    |> group(columns: [\"geo_country\"])\n    |> count()\n    |> rename(columns: {_value: \"attack_count\"})\n    |> group()\n    |> sort(columns: [\"attack_count\"], desc: true)",
+          "refId": "A"
+        }
+      ],
+      "title": "Attack statistics by country (count)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 17,
+        "x": 7,
+        "y": 1
+      },
+      "id": 8,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": "blocked = from(bucket: \"waf-realtime\")\n    |> range(start: -24h)\n    |> filter(fn: (r) => r._measurement == \"waf_requests\")\n    |> filter(fn: (r) => r.blocked == \"true\")\n    |> count()\n\ntotal = from(bucket: \"waf-realtime\")\n    |> range(start: -24h)  \n    |> filter(fn: (r) => r._measurement == \"waf_requests\")\n    |> count()\n\njoin(tables: {blocked: blocked, total: total}, on: [\"_stop\", \"_start\"])\n    |> map(fn: (r) => ({ \n        _value: float(v: r._value_blocked) / float(v: r._value_total) * 100.0,\n        _time: now(),\n        title: \"Block Rate %\" \n    }))",
+          "refId": "A"
+        }
+      ],
+      "title": "Block success rate (24H)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "description": "Distribution by Severity",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": " from(bucket: \"waf-realtime\")\n    |> range(start: -24h)\n    |> filter(fn: (r) => r._measurement == \"waf_events\")\n    |> filter(fn: (r) => r._field == \"severity\")\n    |> aggregateWindow(every: 1h, fn: count, createEmpty: true)\n    |> fill(value: 0)\n    |> yield(name: \"attacks\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Distribution by Severity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "description": "Hourly attack pattern",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "id": 6,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xField": "_time",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": " from(bucket: \"waf-realtime\")\n    |> range(start: -1h)\n    |> filter(fn: (r) => r._measurement == \"waf_events\")\n    |> filter(fn: (r) => r._field == \"severity\")\n    |> aggregateWindow(every: 1h, fn: count, createEmpty: true)\n    |> fill(value: 0)\n    |> group()",
+          "refId": "A"
+        }
+      ],
+      "title": "Hourly attack pattern",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "description": "Realtime Raw",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 203
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": "import \"strings\"\n\nfrom(bucket: \"waf-realtime\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"waf_events\")\n  // 필드들을 가로로 펼쳐서 한 행에 모으기\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  // 모든 그룹을 하나로 합쳐서 전역 최신순 정렬/limit 적용\n  |> group(columns: [])\n  |> sort(columns: [\"_time\"], desc: true)\n  // 한 줄 메시지 생성 (필드/태그 이름은 환경에 맞춰 수정 가능)\n  |> map(fn: (r) => ({\n      _time: r._time,\n      _value: strings.joinStr(\n        arr: [\n          string(v: r._time),\n          \"ip=\" + (if exists r.client_ip then r.client_ip else \"\"),\n          \"method=\" + (if exists r.method then r.method else \"\"),\n          \"uri=\" + (\n            if exists r.request_uri then r.request_uri\n            else if exists r.uri then r.uri\n            else \"\"\n          ),\n          \"status=\" + (if exists r.status then string(v: r.status) else \"\"),\n          \"severity=\" + (if exists r.severity_level then r.severity_level else \"\"),\n          \"score=\" + (if exists r.anomaly_score then string(v: r.anomaly_score) else \"\")\n        ],\n        v: \" \"\n      )\n  }))\n  |> keep(columns: [\"_time\",\"_value\"])\n  |> limit(n: 50)\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Real-time Event Table (30M)",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 2,
+      "panels": [],
+      "title": "GeoMap",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${DS_WAF_INFLUXDB}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "super-light-purple"
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 10
+              },
+              {
+                "color": "semi-dark-red",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 40
+              },
+              {
+                "color": "dark-red",
+                "value": 60
+              },
+              {
+                "color": "dark-red",
+                "value": 80
+              },
+              {
+                "color": "#C15C17",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 24,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 1,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "Layer 0",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": true,
+          "showScale": true,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "field": "pct_global",
+                  "fixed": "dark-green"
+                },
+                "opacity": 0.8,
+                "rotation": {
+                  "field": "event_count",
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "field": "attack_count",
+                  "fixed": 5,
+                  "max": 100,
+                  "min": 5
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "text": {
+                  "field": "pct_global",
+                  "fixed": "",
+                  "mode": "field"
+                },
+                "textConfig": {
+                  "fontSize": 30,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "latitude": "avg_latitude",
+              "longitude": "avg_longitude",
+              "mode": "coords"
+            },
+            "name": "Layer 1",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "fit",
+          "lastOnly": false,
+          "lat": 0,
+          "layer": "Layer 1",
+          "lon": 0,
+          "zoom": 15
+        }
+      },
+      "pluginVersion": "10.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${DS_WAF_INFLUXDB}"
+          },
+          "query": "from(bucket: \"waf-realtime\")\n    |> range(start: -6h)\n    |> filter(fn: (r) => r._measurement == \"waf_events\")\n    |> filter(fn: (r) => r._field == \"geo_latitude\" or r._field == \"geo_longitude\")\n    |> pivot(\n        rowKey: [\"_time\"],\n        columnKey: [\"_field\"],\n        valueColumn: \"_value\"\n    )\n    |> group(columns: [\"geo_country\", \"geo_city\"])\n    |> reduce(\n        identity: {count: 0, lat_sum: 0.0, lon_sum: 0.0, cnt: 0},\n        fn: (r, accumulator) => ({\n          count: accumulator.count + 1,\n          lat_sum: accumulator.lat_sum + r.geo_latitude,\n          lon_sum: accumulator.lon_sum + r.geo_longitude,\n          cnt: accumulator.cnt + 1\n        })\n    )\n    |> map(fn: (r) => ({\n        geo_country: r.geo_country,\n        geo_city: r.geo_city,\n        attack_count: r.count,\n        avg_latitude: r.lat_sum / float(v: r.cnt),\n        avg_longitude: r.lon_sum / float(v: r.cnt)\n    }))\n    |> group()\n    |> sort(columns: [\"attack_count\"], desc: true)",
+          "refId": "A"
+        }
+      ],
+      "title": "WAF Realtime Map (6H)",
+      "type": "geomap"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "WAF Realtime Map",
+  "uid": "devwiz0wiyo00a",
+  "version": 12,
+  "weekStart": ""
+}

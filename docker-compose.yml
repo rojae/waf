@@ -115,11 +115,11 @@ services:
         condition: service_healthy
     volumes:
       - ./ksqldb/ddl.sql:/scripts/ddl.sql:ro
-    entrypoint: >
-      bash -lc "
-        echo 'ksqldb is healthy. applying DDL...';
-        ksql http://waf-ksqldb:8088 --file /scripts/ddl.sql
-      "
+      - ./ksqldb/init-ksqldb.sh:/scripts/init-ksqldb.sh:ro
+    environment:
+      - KSQLDB_URL=http://waf-ksqldb:8088
+    entrypoint: ["/scripts/init-ksqldb.sh"]
+    restart: on-failure:3
 
   # Elasticsearch
   elasticsearch:
@@ -221,7 +221,7 @@ services:
       - KAFKA_TOPIC=waf-realtime-events
       - KAFKA_GROUP=realtime-processor
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=WTvMZKlrjS_2ESZWUT6P7ODomNLC8TDya7xI2ZyvsQqpVYy_v-ezzVdEvtb4y956Yw7BMplSqgHXdfd9gs2CBQ==
+      - INFLUXDB_TOKEN=2MCyOVVBMB5q-gPpDZkkYBMDGSQb-ilFP8EgVnqqaJj8I0ViCz6w__RHHOcTe676LbrHabkFRnvJ8_Y1QKe8Vw==
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
       - INFLUXDB_DUAL_WRITE=true

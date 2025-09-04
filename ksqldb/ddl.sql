@@ -28,9 +28,7 @@ CREATE STREAM MODSEC_RAW (
   processed_timestamp STRING
 ) WITH (
   KAFKA_TOPIC='waf-realtime-events',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 );
 
 -- 2) Analytics Stream (filter analytics track only)
@@ -50,9 +48,7 @@ EMIT CHANGES;
 CREATE STREAM MODSEC_FOR_KIBANA
 WITH (
   KAFKA_TOPIC='waf-logs',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 ) AS
 SELECT 
   client_ip,
@@ -60,8 +56,7 @@ SELECT
   method,
   uri,
   status,
-  'analytics' AS classification_track,
-  STRINGTOTIMESTAMP(time_stamp, 'EEE MMM dd HH:mm:ss yyyy') AS event_timestamp
+  'analytics' AS classification_track
 FROM MODSEC_ANALYTICS
 EMIT CHANGES;
 
@@ -71,9 +66,7 @@ EMIT CHANGES;
 CREATE STREAM HIGH_FREQUENCY_ATTACKS 
 WITH (
   KAFKA_TOPIC='waf-attack-alerts',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 ) AS
 SELECT 
   client_ip,
@@ -93,9 +86,7 @@ EMIT CHANGES;
 CREATE STREAM BLOCK_RATE_ALERTS 
 WITH (
   KAFKA_TOPIC='waf-block-alerts',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 ) AS
 SELECT 
   WINDOWSTART as alert_timestamp,
@@ -122,9 +113,7 @@ EMIT CHANGES;
 CREATE STREAM TOP_ATTACKED_URIS 
 WITH (
   KAFKA_TOPIC='waf-uri-alerts',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 ) AS
 SELECT 
   uri,
@@ -144,9 +133,7 @@ EMIT CHANGES;
 CREATE STREAM UNIFIED_WAF_ALERTS 
 WITH (
   KAFKA_TOPIC='waf-alerts',
-  VALUE_FORMAT='JSON',
-  PARTITIONS=1,
-  REPLICAS=1
+  VALUE_FORMAT='JSON'
 ) AS
 SELECT 
   alert_type,
