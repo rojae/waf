@@ -14,7 +14,7 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - ELASTICSEARCH_URIS=http://elasticsearch:9200
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=2MCyOVVBMB5q-gPpDZkkYBMDGSQb-ilFP8EgVnqqaJj8I0ViCz6w__RHHOcTe676LbrHabkFRnvJ8_Y1QKe8Vw==
+      - INFLUXDB_TOKEN=$(INFLUXDB_TOKEN)
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
       - GRAFANA_URL=http://grafana:3000
