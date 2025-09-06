@@ -35,6 +35,8 @@ flowchart TB
     classDef analytics fill:#6c5ce7,stroke:#5f3dc4,color:#fff,stroke-width:2
     classDef storage fill:#00b894,stroke:#00a085,color:#fff,stroke-width:2
     classDef monitoring fill:#fdcb6e,stroke:#e17055,color:#000,stroke-width:2
+    classDef backend fill:#74b9ff,stroke:#0984e3,color:#fff,stroke-width:2
+    classDef frontend fill:#a29bfe,stroke:#6c5ce7,color:#fff,stroke-width:2
 
     subgraph "🌐 WAF 레이어"
         Client[클라이언트 요청]:::waf
@@ -48,8 +50,8 @@ flowchart TB
 
     subgraph "⚡ 실시간 트랙"
         RealtimeProcessor[Go 프로세서<br/>위협 분석]:::realtime
+        AlertProcessor[Go 알림 프로세서<br/>경고 처리]:::realtime
         InfluxDB[InfluxDB<br/>시계열 DB]:::realtime
-        Alerts[Alert Manager<br/>알림]:::realtime
     end
 
     subgraph "📊 분석 트랙"
@@ -60,22 +62,32 @@ flowchart TB
         ClickHouse[ClickHouse<br/>OLAP 분석]:::analytics
     end
 
+    subgraph "🖥️ 백엔드 서비스"
+        DashboardAPI[Dashboard API<br/>Spring Boot]:::backend
+        SocialAPI[Social API<br/>OAuth2 + JWT]:::backend
+        CommonData[Common Data<br/>공통 데이터]:::backend
+    end
+
+    subgraph "🌐 프론트엔드"
+        WebUI[Next.js Frontend<br/>관리 인터페이스]:::frontend
+    end
+
     subgraph "📈 시각화 & 모니터링"
         Kibana[Kibana<br/>보안 대시보드]:::monitoring
         Grafana[Grafana<br/>메트릭 & 알림]:::monitoring
-        Dashboard[보안 운영<br/>센터]:::monitoring
     end
 
     Client --> WAF
     WAF --> Logs
     Logs --> FluentBit
 
-    FluentBit -->|모든 이벤트<br/>실시간 처리| Kafka
-    FluentBit -->|모든 이벤트<br/>분석 처리| Kafka
+    FluentBit -->|실시간 이벤트| Kafka
+    FluentBit -->|분석용 로그| Kafka
 
     Kafka --> RealtimeProcessor
+    Kafka --> AlertProcessor
     RealtimeProcessor --> InfluxDB
-    RealtimeProcessor --> Alerts
+    AlertProcessor --> InfluxDB
 
     Kafka --> KsqlDB
     Kafka --> Logstash
@@ -84,8 +96,17 @@ flowchart TB
     Logstash --> ClickHouse
 
     InfluxDB --> Grafana
+    InfluxDB --> DashboardAPI
     Elasticsearch --> Kibana
-    ClickHouse --> Dashboard
+    Elasticsearch --> DashboardAPI
+    ClickHouse --> DashboardAPI
+
+    DashboardAPI --> WebUI
+    SocialAPI --> WebUI
+    CommonData --> DashboardAPI
+    CommonData --> SocialAPI
+
+    WebUI --> Client
 ```
 
 ### 이중 트랙 처리 전략
@@ -200,7 +221,8 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 |---------|----------|------|------|------|
 | **WAF** | `waf-nginx` | 8080 | 웹 애플리케이션 방화벽 | 공통 |
 | **로그 라우터** | `waf-fluent-bit` | 2020 | 지능형 이벤트 분류 | 공통 |
-| **실시간 프로세서** | `waf-realtime-processor` | - | 위협 분석 & 알림 | 실시간 |
+| **실시간 프로세서** | `waf-realtime-processor` | - | 위협 분석 & 메트릭 | 실시간 |
+| **알림 프로세서** | `waf-alert-processor` | - | 경고 처리 & 알림 | 실시간 |
 | **스트림 플랫폼** | `waf-kafka` | 9092 | 이벤트 스트리밍 | 분석 |
 | **스트림 프로세서** | `waf-ksqldb` | 8088 | 스트림 강화 | 분석 |
 | **ETL 파이프라인** | `waf-logstash` | 5044 | 데이터 변환 | 분석 |
@@ -212,7 +234,6 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 | **시계열 DB** | `waf-influxdb` | 8086 | 실시간 메트릭 | 시계열 |
 | **검색 엔진** | `waf-elasticsearch` | 9200 | 보안 이벤트 검색 | 문서 |
 | **분석 DB** | `waf-clickhouse` | 8123 | OLAP 쿼리 | 컬럼형 |
-| **세션 저장소** | `waf-redis` | 6379 | 애플리케이션 상태 | Key-Value |
 
 #### 웹 애플리케이션 서비스
 | 서비스 | 컨테이너 | 포트 | 기술 스택 | 목적 |
@@ -220,6 +241,7 @@ curl "http://localhost:8080" -H "User-Agent: Nikto"
 | **프론트엔드** | `waf-frontend` | 3001 | Next.js + TypeScript | 웹 관리 인터페이스 |
 | **대시보드 API** | `waf-dashboard-api` | 8082 | Spring Boot + Java 21 | WAF 관리 API |
 | **소셜 API** | `waf-social-api` | 8081 | Spring Boot + OAuth2 | OAuth 인증 서비스 |
+| **공통 데이터** | `waf-common-data` | - | Spring Boot Library | 공통 데이터 모델 |
 
 #### 모니터링 & 분석 서비스
 | 서비스 | 컨테이너 | 포트 | 목적 |
@@ -267,11 +289,6 @@ ModSecurity 로그 → Fluent Bit → Kafka 토픽 → ksqlDB → 강화된 데�
 - **개선된 지오IP 분석**: 실시간 위치 기반 위협 탐지
 - **이중 데이터 저장**: `waf_events` (레거시) + `waf_requests` (신규) 측정
 
-### Redis 캐시
-
-| 서비스 | 목적 | 사용량 |
-|--------|---------|-----------|
-| `waf-redis` | 세션 저장 및 캐시 | 애플리케이션 상태 |
 
 ---
 
@@ -476,14 +493,6 @@ curl -f http://localhost:8088/info    # ksqlDB
 curl -f http://localhost:9200/_health # Elasticsearch
 ```
 
-#### Redis 연결 문제
-```bash
-# Redis 연결 확인
-docker exec waf-social-api ping redis
-
-# Redis 서비스 재시작
-docker-compose restart waf-redis waf-social-api
-```
 
 ---
 
@@ -544,8 +553,8 @@ docker exec waf-nginx tail -1 /var/log/modsecurity/modsec_audit.json
 # 특정 서비스만 재시작
 docker-compose restart waf-social-api
 
-# Redis와 social-api 함께 재시작  
-docker-compose restart waf-redis waf-social-api
+# 백엔드 서비스들 재시작
+docker-compose restart waf-dashboard-api waf-social-api
 
 # 전체 재시작 (가장 확실한 방법)
 docker-compose down && docker-compose up -d
