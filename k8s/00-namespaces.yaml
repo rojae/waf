@@ -1,0 +1,28 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: waf-system
+  labels:
+    name: waf-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: waf-data
+  labels:
+    name: waf-data
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: waf-processing
+  labels:
+    name: waf-processing
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: waf-monitoring
+  labels:
+    name: waf-monitoring

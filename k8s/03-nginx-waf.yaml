@@ -1,0 +1,276 @@
+---
+# Nginx WAF Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-waf
+  namespace: waf-system
+  labels:
+    app: nginx-waf
+    component: waf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-waf
+  template:
+    metadata:
+      labels:
+        app: nginx-waf
+    spec:
+      containers:
+      - name: nginx-waf
+        image: waf-nginx:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: modsec-logs
+          mountPath: /var/log/modsecurity
+        - name: modsec-rules
+          mountPath: /etc/modsecurity/rules
+          readOnly: true
+        - name: custom-whitelist
+          mountPath: /etc/modsecurity/custom-whitelist.conf
+          subPath: custom-whitelist.conf
+          readOnly: true
+        - name: custom-rules
+          mountPath: /etc/modsecurity/custom-rules
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: modsec-logs
+        persistentVolumeClaim:
+          claimName: waf-modsec-logs-pvc
+      - name: modsec-rules
+        hostPath:
+          path: /Users/jaeseoh/Documents/workspace/waf/nginx/modsecurity/rules
+          type: Directory
+      - name: custom-whitelist
+        configMap:
+          name: nginx-custom-whitelist
+      - name: custom-rules
+        persistentVolumeClaim:
+          claimName: waf-custom-rules-pvc
+
+---
+# ConfigMap for custom whitelist
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-custom-whitelist
+  namespace: waf-system
+data:
+  custom-whitelist.conf: |
+    # Custom ModSecurity Whitelist Rules
+
+    # Whitelist static assets
+    SecRule REQUEST_FILENAME "@rx \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map|pdf|txt|xml|json)$" \
+        "id:1001,\
+        phase:1,\
+        t:lowercase,\
+        msg:'Whitelisting static assets',\
+        tag:'WHITELIST_STATIC',\
+        ctl:ruleEngine=Off"
+
+    # Whitelist common browser requests
+    SecRule REQUEST_URI "@rx ^/(favicon\.ico|robots\.txt|sitemap\.xml|manifest\.json|apple-touch-icon.*\.png)$" \
+        "id:1002,\
+        phase:1,\
+        t:lowercase,\
+        msg:'Whitelisting common browser requests',\
+        tag:'WHITELIST_BROWSER',\
+        ctl:ruleEngine=Off"
+
+    # Whitelist Google OAuth endpoints
+    SecRule REQUEST_URI "@beginsWith /auth/google" \
+        "id:1003,\
+        phase:1,\
+        msg:'Whitelisting Google OAuth endpoints',\
+        tag:'WHITELIST_OAUTH',\
+        ctl:ruleEngine=Off"
+
+---
+# ClusterIP Service for internal access
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-waf-service
+  namespace: waf-system
+  labels:
+    app: nginx-waf
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: nginx-waf
+
+---
+# NodePort Service for external access on port 8080
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-waf-nodeport
+  namespace: waf-system
+  labels:
+    app: nginx-waf
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+    protocol: TCP
+  selector:
+    app: nginx-waf
+
+---
+# Fluent Bit for log collection (single replica)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fluent-bit
+  namespace: waf-system
+  labels:
+    app: fluent-bit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fluent-bit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+    spec:
+      containers:
+      - name: fluent-bit
+        image: fluent/fluent-bit:2.2
+        ports:
+        - containerPort: 2020
+        volumeMounts:
+        - name: modsec-logs
+          mountPath: /var/log/modsecurity
+          readOnly: true
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/fluent-bit.conf
+          subPath: fluent-bit.conf
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/parsers.conf
+          subPath: parsers.conf
+        - name: waf-classifier
+          mountPath: /fluent-bit/etc/waf_classifier.lua
+          subPath: waf_classifier.lua
+          readOnly: true
+        command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"
+      volumes:
+      - name: modsec-logs
+        persistentVolumeClaim:
+          claimName: waf-modsec-logs-pvc
+      - name: fluent-bit-config
+        configMap:
+          name: fluent-bit-config
+      - name: waf-classifier
+        configMap:
+          name: waf-classifier-config
+
+---
+# ConfigMap for WAF Classifier Lua Script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waf-classifier-config
+  namespace: waf-system
+data:
+  waf_classifier.lua: |
+    -- WAF Event Classification Script
+    -- Classifies events into analytics vs realtime tracks based on anomaly score and rule patterns
+
+    function classify_waf_event(tag, timestamp, record)
+        -- Initialize classification structure
+        local classification = {}
+        local track = "analytics"  -- Default track
+        local anomaly_score = 0
+        local rule_id = ""
+
+        -- Extract anomaly score from transaction
+        if record.transaction then
+            if record.transaction.anomaly_score then
+                anomaly_score = record.transaction.anomaly_score
+            end
+
+            -- Extract primary rule ID from messages
+            if record.transaction.messages and type(record.transaction.messages) == "table" then
+                for i, message in ipairs(record.transaction.messages) do
+                    if message.details and message.details.ruleId then
+                        if rule_id == "" then
+                            rule_id = message.details.ruleId  -- Use first rule ID
+                        end
+
+                        -- Critical rules trigger realtime track
+                        local rule_str = tostring(message.details.ruleId)
+                        if rule_str:match("^942") or  -- SQLi
+                           rule_str:match("^941") or  -- XSS
+                           rule_str:match("^932") or  -- RCE
+                           rule_str:match("^949") then -- Blocking evaluation
+                            track = "realtime"
+                        end
+                    end
+                end
+            end
+        end
+
+        -- High anomaly scores trigger realtime track
+        if anomaly_score >= 20 then
+            track = "realtime"
+        end
+
+        -- Scanner detection (rule 913xxx) stays in analytics for noise reduction
+        if rule_id ~= "" and tostring(rule_id):match("^913") then
+            track = "analytics"
+        end
+
+        -- Build classification object
+        classification.track = track
+        classification.anomaly_score = anomaly_score
+        classification.rule_id = rule_id
+        classification.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+
+        -- Add classification to record
+        record.classification = classification
+
+        return 1, timestamp, record
+    end
+
+---
+# Service for Fluent Bit
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluent-bit
+  namespace: waf-system
+  labels:
+    app: fluent-bit
+spec:
+  type: ClusterIP
+  ports:
+  - port: 2020
+    targetPort: 2020
+    protocol: TCP
+  selector:
+    app: fluent-bit

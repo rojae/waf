@@ -12,7 +12,6 @@ import java.io.IOException;
 @RestController
 @RequestMapping("/api/realtime")
 @RequiredArgsConstructor
-@CrossOrigin(origins = {"http://localhost:3001", "http://localhost:3000"}, allowCredentials = "false")
 @Slf4j
 public class RealtimeController {
 

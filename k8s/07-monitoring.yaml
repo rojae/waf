@@ -1,0 +1,432 @@
+---
+# Grafana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: waf-monitoring
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.35
+        command: ['sh', '-c', 'chown -R 472:472 /var/lib/grafana && chmod -R 755 /var/lib/grafana']
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        securityContext:
+          runAsUser: 0
+      - name: wait-for-influxdb
+        image: curlimages/curl:8.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -f http://influxdb.waf-data.svc.cluster.local:8086/ping >/dev/null 2>&1; do
+            echo "Waiting for InfluxDB..."
+            sleep 10
+          done
+          echo "InfluxDB is ready!"
+      securityContext:
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.4.3
+        securityContext:
+          runAsUser: 472
+          runAsGroup: 472
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: grafana-data
+        persistentVolumeClaim:
+          claimName: waf-grafana-pvc
+
+---
+# Grafana Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: waf-monitoring
+  labels:
+    app: grafana
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: grafana
+
+---
+# Grafana NodePort for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-nodeport
+  namespace: waf-monitoring
+  labels:
+    app: grafana
+spec:
+  type: NodePort
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30300
+    protocol: TCP
+  selector:
+    app: grafana
+
+---
+# Kibana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: waf-monitoring
+  labels:
+    app: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: curlimages/curl:8.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -f http://elasticsearch.waf-data.svc.cluster.local:9200/_cluster/health >/dev/null 2>&1; do
+            echo "Waiting for Elasticsearch..."
+            sleep 10
+          done
+          echo "Elasticsearch is ready!"
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:8.15.2
+        ports:
+        - containerPort: 5601
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch.waf-data.svc.cluster.local:9200"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 5601
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+# Kibana Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: waf-monitoring
+  labels:
+    app: kibana
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5601
+    targetPort: 5601
+    protocol: TCP
+  selector:
+    app: kibana
+
+---
+# Kibana NodePort for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana-nodeport
+  namespace: waf-monitoring
+  labels:
+    app: kibana
+spec:
+  type: NodePort
+  ports:
+  - port: 5601
+    targetPort: 5601
+    nodePort: 30601
+    protocol: TCP
+  selector:
+    app: kibana
+
+---
+# Logstash pipeline ConfigMap (waf-system)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waf-logstash-pipeline
+  namespace: waf-system
+data:
+  pipeline.conf: |
+    input {
+      # Direct file input from ModSecurity logs
+      file {
+        path => "/var/log/modsecurity/modsec_audit.json"
+        start_position => "beginning"
+        codec => "json"
+        add_field => { 
+          "source" => "modsecurity"
+          "track" => "analytics"
+        }
+      }
+
+      # Keep Kafka input as backup
+      kafka {
+        bootstrap_servers => "kafka.waf-processing.svc.cluster.local:9092"
+        topics            => ["waf-logs"]
+        group_id          => "ls-waf-analytics"
+        auto_offset_reset => "earliest"
+        codec             => "json"
+        decorate_events   => true
+      }
+    }
+
+    filter {
+      # Process ModSecurity JSON logs directly
+      if [source] == "modsecurity" and [transaction] {
+        mutate {
+          add_tag => [ "modsecurity_direct", "analytics_track" ]
+          add_field => {
+            "[client][ip]" => "%{[transaction][client_ip]}"
+            "[event][original_timestamp]" => "%{[transaction][time_stamp]}"
+            "[http][request][method]" => "%{[transaction][request][method]}"
+            "[url][path]" => "%{[transaction][request][uri]}"
+            "[http][response][status_code]" => "%{[transaction][response][http_code]}"
+            "[event][category]" => "web"
+            "[event][type]" => "access"
+            "[event][dataset]" => "waf.modsecurity"
+            "[labels][track]" => "analytics"
+          }
+        }
+
+        date {
+          match => ["[transaction][time_stamp]", "EEE MMM dd HH:mm:ss yyyy", "EEE MMM  d HH:mm:ss yyyy"]
+          target => "@timestamp"
+          timezone => "UTC"
+        }
+
+        if [transaction][messages] {
+          ruby {
+            code => '
+              messages = event.get("[transaction][messages]")
+              if messages && messages.is_a?(Array) && !messages.empty?
+                rule_ids = messages.map { |msg| msg.dig("details", "ruleId") }.compact
+                severities = messages.map { |msg| msg.dig("details", "severity") }.compact.map(&:to_i)
+                event.set("[modsecurity][rules]", rule_ids)
+                event.set("[modsecurity][max_severity]", severities.max || 0) if !severities.empty?
+                event.set("[modsecurity][rule_count]", rule_ids.length)
+                attack_type = "other"
+                rule_ids.each do |rule_id|
+                  case rule_id.to_s
+                  when /^94[0-9]/  then attack_type = "xss";    break
+                  when /^94[12]/   then attack_type = "sqli";   break
+                  when /^93[0-9]/  then attack_type = "lfi";    break
+                  when /^913/      then attack_type = "scanner";break
+                  when /^932/      then attack_type = "rce";    break
+                  end
+                end
+                event.set("[modsecurity][attack_type]", attack_type)
+              end
+            '
+          }
+        }
+
+        if [client][ip] and [client][ip] !~ /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/ {
+          geoip {
+            source => "[client][ip]"
+            target => "[client][geo]"
+          }
+        }
+
+        mutate { remove_field => ["transaction"] }
+      }
+
+      # Process ksqlDB/Kafka input format (legacy)
+      if [@metadata][kafka][topic] == "waf-logs" {
+        mutate {
+          add_tag => [ "kafka_input", "analytics_track" ]
+          rename => { "CLIENT_IP" => "[client][ip]" }
+          rename => { "TS" => "[event][original_timestamp]" }
+          rename => { "METHOD" => "[http][request][method]" }
+          rename => { "URI" => "[url][path]" }
+          rename => { "STATUS" => "[http][response][status_code]" }
+          rename => { "CLASSIFICATION_TRACK" => "[labels][track]" }
+        }
+      }
+
+      mutate { remove_field => ["@version", "source", "host"] }
+    }
+
+    output {
+      if "analytics_track" in [tags] {
+        elasticsearch {
+          hosts => ["http://elasticsearch.waf-data.svc.cluster.local:9200"]
+          index => "waf-logs-%{+YYYY.MM.dd}"
+          ilm_enabled => false
+        }
+      }
+
+      if "modsecurity_direct" in [tags] {
+        stdout { codec => rubydebug { metadata => false } }
+      }
+    }
+
+---
+# Logstash Deployment (waf-system)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waf-logstash
+  namespace: waf-system
+  labels:
+    app: waf-logstash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: waf-logstash
+  template:
+    metadata:
+      labels:
+        app: waf-logstash
+    spec:
+      # ES가 먼저 뜨도록 간단 대기 (ES가 늦어도 LS는 재시도하므로 없어도 동작은 함)
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: curlimages/curl:8.4.0
+        command: ["sh", "-c", "until curl -fsS http://elasticsearch.waf-data.svc.cluster.local:9200/_cluster/health >/dev/null; do echo 'Waiting for Elasticsearch...'; sleep 5; done; echo 'Elasticsearch is ready'"]
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.15.2
+        ports:
+        - containerPort: 9600   # Logstash HTTP API
+          name: http
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        - name: LOGSTASH_INTERNAL_HTTP_HOST
+          value: "0.0.0.0"  # HTTP API 바인드 (기본값이지만 명시)
+        args:
+          - "--http.host=$(LOGSTASH_INTERNAL_HTTP_HOST)"
+        volumeMounts:
+        - name: pipeline
+          mountPath: /usr/share/logstash/pipeline
+          readOnly: true
+        - name: modsec-logs
+          mountPath: /var/log/modsecurity
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9600
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9600
+          initialDelaySeconds: 20
+          periodSeconds: 10
+      volumes:
+      - name: pipeline
+        configMap:
+          name: waf-logstash-pipeline
+          items:
+          - key: pipeline.conf
+            path: pipeline.conf
+      - name: modsec-logs
+        persistentVolumeClaim:
+          claimName: waf-modsec-logs-pvc   # (waf-system 네임스페이스)
+
+---
+# Logstash Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: waf-logstash
+  namespace: waf-system
+  labels:
+    app: waf-logstash
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9600
+    targetPort: 9600
+    protocol: TCP
+    name: http
+  selector:
+    app: waf-logstash

@@ -1,0 +1,216 @@
+---
+# Local Storage Class
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: docker.io/hostpath
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+
+---
+# Persistent Volumes for data storage
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-modsec-logs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/modsec-logs
+
+---
+# Additional PV for waf-processing namespace (for logstash)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-modsec-logs-processing-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/modsec-logs
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-influxdb-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/influxdb
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-clickhouse-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/clickhouse
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-grafana-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/grafana
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-elasticsearch-pv
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/elasticsearch
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-custom-rules-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/custom-rules
+
+---
+# Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-modsec-logs-pvc
+  namespace: waf-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-storage
+
+---
+# Additional PVC for waf-processing namespace (for logstash)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-modsec-logs-pvc
+  namespace: waf-processing
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-influxdb-pvc
+  namespace: waf-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-clickhouse-pvc
+  namespace: waf-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-grafana-pvc
+  namespace: waf-monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-elasticsearch-pvc
+  namespace: waf-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-custom-rules-pvc
+  namespace: waf-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-storage

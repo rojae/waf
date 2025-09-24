@@ -13,7 +13,6 @@ import java.util.concurrent.CompletableFuture;
 @RestController
 @RequestMapping("/api/test")
 @RequiredArgsConstructor
-@CrossOrigin(origins = {"http://localhost:3001", "http://localhost:3000"}, allowCredentials = "false")
 @Slf4j
 public class TestController {
 

@@ -1,0 +1,445 @@
+---
+# Kafka Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: waf-processing
+  labels:
+    app: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: apache/kafka:3.8.0
+        ports:
+        - containerPort: 9092
+        - containerPort: 9093
+        env:
+        - name: KAFKA_NODE_ID
+          value: "1"
+        - name: KAFKA_PROCESS_ROLES
+          value: "broker,controller"
+        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+          value: "1@localhost:9093"
+        - name: KAFKA_LISTENERS
+          value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka.waf-processing.svc.cluster.local:9092"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: KAFKA_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
+        - name: KAFKA_LOG_DIRS
+          value: "/tmp/kraft-combined-logs"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+          value: "1"
+        - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+          value: "true"
+        - name: CLUSTER_ID
+          value: "q1w2e3r4t5y6u7i8o9p0aa"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        livenessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 5
+        readinessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 90
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        volumeMounts:
+        - name: kafka-data
+          mountPath: /tmp/kraft-combined-logs
+      volumes:
+      - name: kafka-data
+        emptyDir: {}
+
+---
+# Kafka Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: waf-processing
+  labels:
+    app: kafka
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: kafka
+
+---
+# Kafka Headless Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: waf-processing
+  labels:
+    app: kafka
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+    name: broker
+  - port: 9093
+    targetPort: 9093
+    protocol: TCP
+    name: controller
+  selector:
+    app: kafka
+
+---
+# Kafka Topics Initialization Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics-init
+  namespace: waf-processing
+  labels:
+    app: kafka-topics-init
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-kafka
+        image: confluentinc/cp-kafka:7.6.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          until kafka-broker-api-versions --bootstrap-server kafka.waf-processing.svc.cluster.local:9092 >/dev/null 2>&1; do
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka is ready!"
+      containers:
+      - name: topics-init
+        image: confluentinc/cp-kafka:7.6.1
+        env:
+        - name: BROKER
+          value: "kafka.waf-processing.svc.cluster.local:9092"
+        volumeMounts:
+        - name: kafka-topics-script
+          mountPath: /scripts/ensure-topics.sh
+          subPath: ensure-topics.sh
+        command: ["/bin/bash", "-lc", "/scripts/ensure-topics.sh"]
+      volumes:
+      - name: kafka-topics-script
+        configMap:
+          name: kafka-topics-script
+          defaultMode: 0755
+
+---
+# ksqlDB Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksqldb
+  namespace: waf-processing
+  labels:
+    app: ksqldb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ksqldb
+  template:
+    metadata:
+      labels:
+        app: ksqldb
+    spec:
+      initContainers:
+      - name: wait-for-kafka
+        image: confluentinc/cp-kafka:7.6.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          until kafka-broker-api-versions --bootstrap-server kafka.waf-processing.svc.cluster.local:9092 >/dev/null 2>&1; do
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka is ready!"
+      containers:
+      - name: ksqldb
+        image: confluentinc/cp-ksqldb-server:7.6.6
+        ports:
+        - containerPort: 8088
+        env:
+        - name: KSQL_BOOTSTRAP_SERVERS
+          value: "kafka.waf-processing.svc.cluster.local:9092"
+        - name: KSQL_LISTENERS
+          value: "http://0.0.0.0:8088"
+        - name: KSQL_KSQL_SERVICE_ID
+          value: "waf_ksqldb_01"
+        - name: KSQL_KSQL_STREAMS_REPLICATION_FACTOR
+          value: "1"
+        - name: KSQL_KSQL_INTERNAL_TOPIC_REPLICAS
+          value: "1"
+        - name: KSQL_KSQL_SINK_REPLICAS
+          value: "1"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE
+          value: "true"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE
+          value: "true"
+        - name: KSQL_KSQL_STREAMS_AUTO_OFFSET_RESET
+          value: "earliest"
+        - name: KSQL_HEAP_OPTS
+          value: "-Xms512m -Xmx512m"
+        - name: KSQL_KSQL_STREAMS_NUM_STANDBY_REPLICAS
+          value: "0"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /info
+            port: 8088
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /info
+            port: 8088
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+# ksqlDB Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ksqldb
+  namespace: waf-processing
+  labels:
+    app: ksqldb
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8088
+    targetPort: 8088
+    protocol: TCP
+  selector:
+    app: ksqldb
+
+---
+# ksqlDB Initialization Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ksqldb-init
+  namespace: waf-processing
+  labels:
+    app: ksqldb-init
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-ksqldb
+        image: curlimages/curl:8.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -sf http://ksqldb.waf-processing.svc.cluster.local:8088/info >/dev/null 2>&1; do
+            echo "Waiting for ksqlDB..."
+            sleep 5
+          done
+          echo "ksqlDB is ready!"
+      containers:
+      - name: ksqldb-init
+        image: confluentinc/cp-ksqldb-cli:7.6.6
+        env:
+        - name: KSQLDB_URL
+          value: "http://ksqldb.waf-processing.svc.cluster.local:8088"
+        volumeMounts:
+        - name: ksqldb-ddl
+          mountPath: /scripts/ddl.sql
+          subPath: ddl.sql
+        - name: ksqldb-ddl
+          mountPath: /scripts/init-ksqldb.sh
+          subPath: init-ksqldb.sh
+        command: ["/scripts/init-ksqldb.sh"]
+      volumes:
+      - name: ksqldb-ddl
+        configMap:
+          name: ksqldb-ddl
+          defaultMode: 0755
+
+
+---
+# Real-time Processor Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: realtime-processor
+  namespace: waf-processing
+  labels:
+    app: realtime-processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: realtime-processor
+  template:
+    metadata:
+      labels:
+        app: realtime-processor
+    spec:
+      initContainers:
+      - name: wait-for-kafka
+        image: confluentinc/cp-kafka:7.6.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          until kafka-broker-api-versions --bootstrap-server kafka.waf-processing.svc.cluster.local:9092 >/dev/null 2>&1; do
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka is ready!"
+      - name: wait-for-influxdb
+        image: curlimages/curl:8.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -f http://influxdb.waf-data.svc.cluster.local:8086/ping >/dev/null 2>&1; do
+            echo "Waiting for InfluxDB..."
+            sleep 10
+          done
+          echo "InfluxDB is ready!"
+      containers:
+      - name: realtime-processor
+        image: waf-realtime-processor:latest
+        imagePullPolicy: Never
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka.waf-processing.svc.cluster.local:9092"
+        - name: KAFKA_TOPIC
+          value: "waf-realtime-events"
+        - name: KAFKA_GROUP
+          value: "realtime-processor"
+        - name: INFLUXDB_URL
+          value: "http://influxdb.waf-data.svc.cluster.local:8086"
+        - name: INFLUXDB_TOKEN
+          valueFrom:
+            configMapKeyRef:
+              name: influxdb-config
+              key: influxdb-token
+        - name: INFLUXDB_ORG
+          valueFrom:
+            configMapKeyRef:
+              name: influxdb-config
+              key: influxdb-org
+        - name: INFLUXDB_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: influxdb-config
+              key: influxdb-bucket
+        - name: INFLUXDB_DUAL_WRITE
+          value: "true"
+        - name: GEOIP_DB_PATH
+          value: "/data/GeoLite2-City.mmdb"
+        volumeMounts:
+        - name: geoip-data
+          mountPath: /data
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: geoip-data
+        hostPath:
+          path: /Users/jaeseoh/Documents/workspace/waf/lib/geoip/GeoLite2-City
+          type: Directory
+
+---
+# Alert Processor Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-processor
+  namespace: waf-processing
+  labels:
+    app: alert-processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-processor
+  template:
+    metadata:
+      labels:
+        app: alert-processor
+    spec:
+      initContainers:
+      - name: wait-for-kafka
+        image: confluentinc/cp-kafka:7.6.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          until kafka-broker-api-versions --bootstrap-server kafka.waf-processing.svc.cluster.local:9092 >/dev/null 2>&1; do
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka is ready!"
+      containers:
+      - name: alert-processor
+        image: waf-alert-processor:latest
+        imagePullPolicy: Never
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka.waf-processing.svc.cluster.local:9092"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"

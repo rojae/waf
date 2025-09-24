@@ -13,12 +13,15 @@ spring:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope: openid, profile, email
-            redirect-uri: "http://localhost:8081/login/oauth2/code/google"
+            redirect-uri: "${GOOGLE_OAUTH_REDIRECT_URI:http://localhost:8081/login/oauth2/code/google}"
         provider:
           google:
             issuer-uri: https://accounts.google.com
 
 app:
+  oauth:
+    callback-base-url: ${OAUTH_CALLBACK_BASE_URL:http://localhost:8081}
+    default-redirect-url: ${OAUTH_DEFAULT_REDIRECT_URL:http://localhost:3001}
   jwt:
     secret: ${JWT_SECRET:change-me-32bytes-len}
     access-ttl-seconds: 900
