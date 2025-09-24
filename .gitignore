@@ -96,6 +96,11 @@ nb-configuration.xml
 .DS_Store
 
 ##############################
+## Kubernetes Secrets (Local Development)
+##############################
+k8s/*.yaml.local
+
+##############################
 ## Miscellaneous
 ##############################
 *.log

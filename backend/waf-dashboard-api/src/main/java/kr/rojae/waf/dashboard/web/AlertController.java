@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 @RestController
 @RequestMapping("/api/alerts")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3001")
 @Slf4j
 public class AlertController {
 

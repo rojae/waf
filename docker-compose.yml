@@ -162,6 +162,7 @@ services:
       - kafka
     volumes:
       - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - modsec-logs:/var/log/modsecurity:ro
     environment:
       - LS_JAVA_OPTS=-Xms512m -Xmx512m
 
@@ -221,7 +222,7 @@ services:
       - KAFKA_TOPIC=waf-realtime-events
       - KAFKA_GROUP=realtime-processor
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=$(INFLUXDB_TOKEN)
+      - INFLUXDB_TOKEN=2MCyOVVBMB5q-gPpDZkkYBMDGSQb-ilFP8EgVnqqaJj8I0ViCz6w__RHHOcTe676LbrHabkFRnvJ8_Y1QKe8Vw==
       - INFLUXDB_ORG=waf-org
       - INFLUXDB_BUCKET=waf-realtime
       - INFLUXDB_DUAL_WRITE=true

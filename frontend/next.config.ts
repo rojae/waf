@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/auth/google/login',
+        destination: '/api/auth/google/login',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

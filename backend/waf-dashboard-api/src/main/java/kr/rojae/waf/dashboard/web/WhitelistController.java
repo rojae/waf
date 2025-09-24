@@ -13,7 +13,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/whitelist")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3001")
 @Slf4j
 public class WhitelistController {
 

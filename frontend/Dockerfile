@@ -23,9 +23,11 @@ ENV NODE_ENV=production
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nextjs -u 1001
 
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+
+# Copy public directory if it exists (optional for Next.js projects)
+RUN mkdir -p ./public
 
 USER nextjs
 

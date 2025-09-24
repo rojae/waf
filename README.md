@@ -181,7 +181,59 @@ cd waf
 ./startup.sh --build
 ```
 
-### 프로덕션 배포
+### Kubernetes 배포 (권장)
+
+#### 1. 환경 설정
+
+```bash
+# 환경변수 파일 생성
+cp .env.example .env
+vi .env  # 실제 값들로 편집
+```
+
+#### 2. 배포 실행
+
+```bash
+# 기본 배포 (.env 파일 사용)
+./deploy-all.sh
+
+# 다른 환경파일 사용
+./deploy-all.sh -e .env.prod
+
+# 환경변수로 직접 전달
+DOMAIN=example.com INFLUXDB_TOKEN=xyz ./deploy-all.sh -m env
+
+# 대화형 입력
+./deploy-all.sh -m interactive
+
+# 강제 재생성 (설정 변경 후)
+./deploy-all.sh -f
+```
+
+#### 3. deploy-all.sh 사용 옵션
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| `-e, --env-file FILE` | 환경변수 파일 지정 | `./deploy-all.sh -e .env.staging` |
+| `-m, --mode MODE` | 설정 모드 (auto/env/interactive) | `./deploy-all.sh -m interactive` |
+| `-f, --force` | .local 파일 강제 재생성 | `./deploy-all.sh -f` |
+| `-h, --help` | 도움말 표시 | `./deploy-all.sh -h` |
+
+#### 4. 배포 후 접속
+
+```bash
+# 서비스 상태 확인
+kubectl get pods -n waf-system
+
+# 웹 인터페이스 접속
+- 🖥️  WAF Frontend:     http://localhost:3001
+- 📊 Dashboard API:     http://localhost:8082
+- 👤 Social API:        http://localhost:8081
+- 📈 Grafana:           http://localhost:3000
+- 🔍 Kibana:            http://localhost:5601
+```
+
+### Docker Compose 배포 (개발용)
 
 ```bash
 # 환경 변수 설정

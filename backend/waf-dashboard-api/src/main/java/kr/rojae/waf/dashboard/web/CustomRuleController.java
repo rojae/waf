@@ -12,7 +12,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/rules")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3001")
 @Slf4j
 public class CustomRuleController {
 

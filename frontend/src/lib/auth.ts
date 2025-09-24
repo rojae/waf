@@ -45,8 +45,8 @@ export class AuthService {
   }
 
   static login() {
-    // Redirect to backend OAuth login
-    window.location.href = `${process.env.NEXT_PUBLIC_SOCIAL_API_URL || 'http://localhost:8081'}/auth/google/login?redirect_uri=${window.location.origin}`
+    // Redirect to our backend login endpoint which will handle OAuth properly
+    window.location.href = '/auth/google/login?redirect_uri=' + encodeURIComponent(window.location.origin + '/dashboard')
   }
 
   static async logout(): Promise<void> {
