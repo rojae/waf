@@ -13,18 +13,18 @@ RUN rm -f \
     /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 
 # conf copy
-COPY ./nginx/nginx.conf /etc/nginx/nginx.conf
-COPY ./nginx/modsecurity/modsecurity.conf /etc/modsecurity/modsecurity.conf
-COPY ./nginx/modsecurity/custom-whitelist.conf /etc/modsecurity/custom-whitelist.conf
-COPY ./nginx/modsecurity/crs-setup.conf /etc/modsecurity.d/crs-setup.conf
-COPY ./nginx/modsecurity/rules /etc/modsecurity.d/rules
+COPY ./nginx.conf /etc/nginx.conf
+COPY ./modsecurity/modsecurity.conf /etc/modsecurity/modsecurity.conf
+COPY ./modsecurity/custom-whitelist.conf /etc/modsecurity/custom-whitelist.conf
+COPY ./modsecurity/crs-setup.conf /etc/modsecurity.d/crs-setup.conf
+COPY ./modsecurity/rules /etc/modsecurity.d/rules
 
 # nginx html file
 RUN rm -f /usr/share/nginx/html/index.html
-COPY ./nginx/html /usr/share/nginx/html
+COPY ./html /usr/share/nginx/html
 
 # custom entrypoint script copy
-COPY ./nginx/init.sh /init.sh
+COPY ./init.sh /init.sh
 RUN chmod +x /init.sh
 
 EXPOSE 80
