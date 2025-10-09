@@ -226,10 +226,55 @@ export default function Dashboard() {
           <Box sx={{ flexGrow: 1 }} />
           
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Chip 
-              icon={<CheckCircle />} 
-              label="System Online" 
-              color="success" 
+            {/* Navigation Buttons */}
+            <Box sx={{ display: 'flex', gap: 1, mr: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<Assignment />}
+                onClick={() => router.push('/dashboard/custom-rules')}
+                size="small"
+                sx={{
+                  borderColor: 'primary.main',
+                  color: 'primary.main',
+                  '&:hover': { backgroundColor: 'primary.main', color: 'white' }
+                }}
+              >
+                Custom Rules
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<List />}
+                onClick={() => router.push('/dashboard/rules')}
+                size="small"
+                sx={{
+                  borderColor: 'grey.300',
+                  color: 'text.primary',
+                  '&:hover': { backgroundColor: 'grey.100' }
+                }}
+              >
+                Rules
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Notifications />}
+                onClick={() => router.push('/dashboard/alerts')}
+                size="small"
+                sx={{
+                  borderColor: 'grey.300',
+                  color: 'text.primary',
+                  '&:hover': { backgroundColor: 'grey.100' }
+                }}
+              >
+                Alerts
+              </Button>
+            </Box>
+
+            <Divider orientation="vertical" flexItem />
+
+            <Chip
+              icon={<CheckCircle />}
+              label="System Online"
+              color="success"
               size="small"
               variant="outlined"
             />
@@ -253,7 +298,7 @@ export default function Dashboard() {
               startIcon={<ExitToApp />}
               onClick={logout}
               size="small"
-              sx={{ 
+              sx={{
                 borderColor: 'grey.300',
                 color: 'text.primary',
                 '&:hover': { borderColor: 'error.main', color: 'error.main' }

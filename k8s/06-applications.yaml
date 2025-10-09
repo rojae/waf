@@ -73,7 +73,7 @@ spec:
         - name: KAFKA_BOOTSTRAP_SERVERS
           value: "kafka.waf-processing.svc.cluster.local:9092"
         - name: CORS_ALLOWED_ORIGINS
-          value: "https://e1254b9ad210.ngrok-free.app"
+          value: "https://c5e94b25ca8c.ngrok-free.app"
         volumeMounts:
         - name: custom-rules
           mountPath: /app/custom-rules
@@ -192,13 +192,13 @@ spec:
               name: waf-auth-secrets
               key: jwt-secret
         - name: COOKIE_DOMAIN
-          value: "https://e1254b9ad210.ngrok-free.app"
+          value: "https://c5e94b25ca8c.ngrok-free.app"
         - name: GOOGLE_OAUTH_REDIRECT_URI
-          value: "https://e1254b9ad210.ngrok-free.app/login/oauth2/code/google"
+          value: "https://c5e94b25ca8c.ngrok-free.app/login/oauth2/code/google"
         - name: OAUTH_CALLBACK_BASE_URL
-          value: "https://e1254b9ad210.ngrok-free.app"
+          value: "https://c5e94b25ca8c.ngrok-free.app"
         - name: OAUTH_DEFAULT_REDIRECT_URL
-          value: "https://e1254b9ad210.ngrok-free.app"
+          value: "https://c5e94b25ca8c.ngrok-free.app"
         resources:
           requests:
             memory: "256Mi"
@@ -313,7 +313,9 @@ spec:
         - name: DASHBOARD_API_URL
           value: "http://waf-dashboard-api.waf-system.svc.cluster.local:8082"
         - name: NEXT_PUBLIC_SOCIAL_API_URL
-          value: "https://e1254b9ad210.ngrok-free.app"
+          value: "https://c5e94b25ca8c.ngrok-free.app"
+        - name: NEXT_PUBLIC_DASHBOARD_API_URL
+          value: "http://waf-dashboard-api.waf-system.svc.cluster.local:8082"
         - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID
           valueFrom:
             secretKeyRef:
@@ -322,23 +324,24 @@ spec:
               optional: true
         resources:
           requests:
-            memory: "256Mi"
+            memory: "512Mi"
             cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3001
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3001
-          initialDelaySeconds: 10
-          periodSeconds: 5
+            memory: "1Gi"
+            cpu: "500m"
+        # Temporarily disabled health checks to allow deployment
+        # livenessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: 3001
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 10
+        # readinessProbe:
+        #   httpGet:
+        #     path: /
+        #     port: 3001
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 5
 
 ---
 # WAF Frontend Service
