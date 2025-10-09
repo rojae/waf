@@ -1,0 +1,279 @@
+---
+# Deployment monitoring and health checks for custom rules system
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waf-monitoring-config
+  namespace: waf-system
+  labels:
+    app: waf
+    component: monitoring
+data:
+  # Health check script for custom rules
+  health-check.sh: |
+    #!/bin/bash
+    # WAF Custom Rules Health Check Script
+
+    set -e
+
+    echo "Starting WAF Custom Rules Health Check..."
+
+    # Check if custom rules ConfigMap exists
+    if kubectl get configmap modsecurity-custom-rules -n waf-system >/dev/null 2>&1; then
+        echo "✓ Custom rules ConfigMap exists"
+    else
+        echo "✗ Custom rules ConfigMap not found"
+        exit 1
+    fi
+
+    # Check if rules content is valid
+    RULES_CONTENT=$(kubectl get configmap modsecurity-custom-rules -n waf-system -o jsonpath='{.data.custom-rules\.conf}')
+    if [ -n "$RULES_CONTENT" ]; then
+        echo "✓ Custom rules content found ($(echo "$RULES_CONTENT" | wc -l) lines)"
+    else
+        echo "⚠ Custom rules ConfigMap exists but contains no rules"
+    fi
+
+    # Check Nginx WAF deployment status
+    READY_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n waf-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n waf-system -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+
+    if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ] && [ "$READY_REPLICAS" -gt "0" ]; then
+        echo "✓ Nginx WAF deployment is healthy ($READY_REPLICAS/$DESIRED_REPLICAS replicas ready)"
+    else
+        echo "✗ Nginx WAF deployment is not healthy ($READY_REPLICAS/$DESIRED_REPLICAS replicas ready)"
+        exit 1
+    fi
+
+    # Test rule syntax if rules exist
+    if [ -n "$RULES_CONTENT" ] && [ "$RULES_CONTENT" != "# No custom rules configured" ]; then
+        echo "Testing rule syntax..."
+
+        # Create temporary file for syntax checking
+        TEMP_FILE="/tmp/custom-rules-test.conf"
+        echo "$RULES_CONTENT" > "$TEMP_FILE"
+
+        # Basic syntax validation
+        if grep -q "SecRule" "$TEMP_FILE"; then
+            RULE_COUNT=$(grep -c "SecRule" "$TEMP_FILE")
+            echo "✓ Found $RULE_COUNT ModSecurity rules"
+        else
+            echo "⚠ No SecRule directives found in custom rules"
+        fi
+
+        rm -f "$TEMP_FILE"
+    fi
+
+    echo "Health check completed successfully"
+
+  # Metrics collection script
+  metrics-collector.sh: |
+    #!/bin/bash
+    # WAF Metrics Collection Script
+
+    NAMESPACE="waf-system"
+
+    # Collect basic metrics
+    echo "# WAF Custom Rules Metrics"
+    echo "waf_custom_rules_configmap_exists $(kubectl get configmap modsecurity-custom-rules -n $NAMESPACE >/dev/null 2>&1 && echo 1 || echo 0)"
+
+    # Count rules
+    RULES_COUNT=$(kubectl get configmap modsecurity-custom-rules -n $NAMESPACE -o jsonpath='{.data.custom-rules\.conf}' 2>/dev/null | grep -c "SecRule" || echo 0)
+    echo "waf_custom_rules_total $RULES_COUNT"
+
+    # Deployment metrics
+    READY_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n $NAMESPACE -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
+
+    echo "waf_nginx_ready_replicas $READY_REPLICAS"
+    echo "waf_nginx_desired_replicas $DESIRED_REPLICAS"
+    echo "waf_nginx_deployment_healthy $( [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ] && [ "$READY_REPLICAS" -gt "0" ] && echo 1 || echo 0 )"
+
+    # Last update timestamp from ConfigMap annotations
+    LAST_UPDATE=$(kubectl get configmap modsecurity-custom-rules -n $NAMESPACE -o jsonpath='{.metadata.annotations.waf\.rojae\.kr/updated-at}' 2>/dev/null || echo "")
+    if [ -n "$LAST_UPDATE" ]; then
+        UPDATE_TIMESTAMP=$(date -d "$LAST_UPDATE" +%s 2>/dev/null || echo 0)
+        echo "waf_custom_rules_last_update_timestamp $UPDATE_TIMESTAMP"
+    fi
+
+---
+# CronJob for periodic health checks
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: waf-health-check
+  namespace: waf-system
+  labels:
+    app: waf
+    component: health-check
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: waf
+            component: health-check-job
+        spec:
+          serviceAccountName: waf-dashboard-api
+          restartPolicy: Never
+          containers:
+          - name: health-checker
+            image: bitnami/kubectl:latest
+            imagePullPolicy: Always
+            command:
+            - /bin/bash
+            - /scripts/health-check.sh
+            volumeMounts:
+            - name: monitoring-scripts
+              mountPath: /scripts
+              readOnly: true
+            env:
+            - name: NAMESPACE
+              value: "waf-system"
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "100m"
+              limits:
+                memory: "128Mi"
+                cpu: "200m"
+          volumes:
+          - name: monitoring-scripts
+            configMap:
+              name: waf-monitoring-config
+              defaultMode: 0755
+
+---
+# Service Monitor for Prometheus (if using Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: waf-custom-rules-monitor
+  namespace: waf-system
+  labels:
+    app: waf
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: waf-dashboard-api
+  endpoints:
+  - port: http
+    path: /actuator/prometheus
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# PodMonitor for direct pod monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: waf-nginx-pods
+  namespace: waf-system
+  labels:
+    app: waf
+    component: pod-monitoring
+spec:
+  selector:
+    matchLabels:
+      app: nginx-waf
+  podMetricsEndpoints:
+  - port: metrics
+    path: /nginx_status
+    interval: 30s
+
+---
+# NetworkPolicy for monitoring components
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: waf-monitoring-netpol
+  namespace: waf-system
+spec:
+  podSelector:
+    matchLabels:
+      app: waf
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443  # Kubernetes API
+
+---
+# Alert rules for custom rules system
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waf-alerting-rules
+  namespace: waf-system
+  labels:
+    app: waf
+    component: alerting
+data:
+  waf-rules.yaml: |
+    groups:
+    - name: waf-custom-rules
+      rules:
+      - alert: WAFCustomRulesConfigMapMissing
+        expr: waf_custom_rules_configmap_exists == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: waf-custom-rules
+        annotations:
+          summary: "WAF Custom Rules ConfigMap is missing"
+          description: "The ModSecurity custom rules ConfigMap is not found in the waf-system namespace"
+
+      - alert: WAFNginxDeploymentUnhealthy
+        expr: waf_nginx_deployment_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: waf-nginx
+        annotations:
+          summary: "WAF Nginx deployment is unhealthy"
+          description: "WAF Nginx deployment has {{ $value }} ready replicas out of {{ $value }} desired replicas"
+
+      - alert: WAFCustomRulesNotUpdated
+        expr: (time() - waf_custom_rules_last_update_timestamp) > 86400
+        for: 0m
+        labels:
+          severity: warning
+          component: waf-custom-rules
+        annotations:
+          summary: "WAF Custom Rules haven't been updated recently"
+          description: "Custom rules haven't been updated in over 24 hours"
+
+      - alert: WAFHealthCheckFailing
+        expr: up{job="waf-health-check"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: waf-health-check
+        annotations:
+          summary: "WAF health check is failing"
+          description: "WAF health check job has been failing for more than 5 minutes"

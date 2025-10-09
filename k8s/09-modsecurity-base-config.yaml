@@ -1,0 +1,219 @@
+---
+# Base ModSecurity Configuration
+# This configures the core ModSecurity settings that will be used alongside custom rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modsecurity-base-config
+  namespace: waf-system
+  labels:
+    app: waf
+    component: modsecurity-config
+    managed-by: waf-dashboard
+  annotations:
+    waf.rojae.kr/description: "Base ModSecurity configuration for WAF"
+    waf.rojae.kr/version: "3.0.12"
+data:
+  # Main ModSecurity configuration
+  modsecurity.conf: |
+    # ModSecurity Core Configuration
+    # This file contains the main configuration settings for ModSecurity
+
+    # Engine Configuration
+    SecRuleEngine On
+    SecRequestBodyAccess On
+    SecResponseBodyAccess On
+    SecResponseBodyMimeType text/plain text/html text/xml
+    SecRequestBodyLimit 134217728
+    SecRequestBodyNoFilesLimit 1048576
+    SecRequestBodyInMemoryLimit 131072
+    SecRequestBodyLimitAction Reject
+
+    # Audit Log Configuration
+    SecAuditEngine On
+    SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+    SecAuditLogParts ABIJDEFHZ
+    SecAuditLogType Serial
+    SecAuditLog /var/log/modsecurity/modsec_audit.log
+    SecAuditLogStorageDir /var/log/modsecurity/
+
+    # Data Directory
+    SecDataDir /tmp/modsecurity/data
+
+    # Upload Directory
+    SecUploadDir /tmp/modsecurity/uploads
+    SecUploadFileMode 0600
+    SecUploadFileLimit 100
+    SecUploadKeepFiles RelevantOnly
+
+    # Debug Log Configuration
+    SecDebugLog /var/log/modsecurity/modsec_debug.log
+    SecDebugLogLevel 3
+
+    # Collection timeout
+    SecCollectionTimeout 600
+
+    # Geo IP Configuration (if available)
+    # SecGeoLookupDB /etc/modsecurity/GeoIP.dat
+
+    # Status Engine
+    SecStatusEngine On
+
+    # Custom error pages
+    SecErrorPage 403
+
+  # Core rule set inclusion
+  include.conf: |
+    # Include OWASP Core Rule Set (CRS)
+    Include /etc/modsecurity/crs/crs-setup.conf
+    Include /etc/modsecurity/crs/rules/*.conf
+
+    # Include custom rules (managed by dashboard)
+    Include /etc/modsecurity/custom/custom-rules.conf
+
+  # CRS Setup configuration
+  crs-setup.conf: |
+    # OWASP ModSecurity Core Rule Set ver.4.0.0
+    # Copyright (c) 2006-2020 Trustwave and contributors. All rights reserved.
+    # Copyright (c) 2021-2024 Core Rule Set project. All rights reserved.
+
+    # The OWASP ModSecurity Core Rule Set (CRS) is a set of generic attack detection rules
+    # for use with ModSecurity or compatible web application firewalls.
+
+    # CRS Setup Configuration File
+
+    # Paranoia Level 1 (default) - Standard protection
+    SecAction \
+      "id:900000,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.paranoia_level=1"
+
+    # Application specific exclusions live in APPLICATION_EXCLUSIONS_FILE
+    SecAction \
+      "id:900001,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.application_exclusions_file=/etc/modsecurity/application_exclusions.conf"
+
+    # Generic settings
+    SecAction \
+      "id:900110,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.inbound_anomaly_score_threshold=5,\
+       setvar:tx.outbound_anomaly_score_threshold=4"
+
+    # IP Reputation
+    SecAction \
+      "id:900111,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.do_reput_block=0,\
+       setvar:tx.reput_block_flag=0"
+
+    # DoS Protection
+    SecAction \
+      "id:900112,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.dos_block_timeout=600,\
+       setvar:tx.dos_counter_threshold=50,\
+       setvar:tx.dos_burst_time_slice=60"
+
+    # Scanner Detection
+    SecAction \
+      "id:900113,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.do_scanner_detection=1,\
+       setvar:tx.scanner_detection_timeout=300"
+
+  # Application exclusions (customize per application)
+  application_exclusions.conf: |
+    # Application specific rule exclusions
+    # This file contains exclusions for specific applications
+    # Example exclusions below - customize for your application
+
+    # Example: WordPress exclusions
+    # SecRuleUpdateTargetById 941100 "!ARGS:post_content"
+    # SecRuleUpdateTargetById 941130 "!ARGS:post_content"
+
+    # Example: Admin interface exclusions
+    # SecRule REQUEST_URI "@beginsWith /admin" \
+    #   "id:1001,phase:1,pass,nolog,ctl:ruleRemoveTargetByTag=OWASP_CRS;ARGS"
+
+    # Custom application rules can be added here
+
+---
+# Service for ModSecurity configuration updates
+apiVersion: v1
+kind: Service
+metadata:
+  name: modsecurity-config-service
+  namespace: waf-system
+  labels:
+    app: waf
+    component: config-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: waf-config-manager
+
+---
+# RBAC for config management
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: waf-system
+  name: modsecurity-config-manager
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "deployments/status"]
+  verbs: ["get", "list", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: modsecurity-config-manager
+  namespace: waf-system
+subjects:
+- kind: ServiceAccount
+  name: waf-dashboard-api
+  namespace: waf-system
+roleRef:
+  kind: Role
+  name: modsecurity-config-manager
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Service Account for WAF Dashboard API
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: waf-dashboard-api
+  namespace: waf-system
+  labels:
+    app: waf
+    component: dashboard-api

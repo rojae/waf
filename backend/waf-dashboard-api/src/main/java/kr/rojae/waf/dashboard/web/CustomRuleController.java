@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/rules")
+@RequestMapping("/api/custom-rules")
 @RequiredArgsConstructor
 @Slf4j
 public class CustomRuleController {
