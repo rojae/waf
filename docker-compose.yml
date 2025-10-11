@@ -195,10 +195,10 @@ services:
       - "8086:8086"
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
-      - DOCKER_INFLUXDB_INIT_ORG=waf-org
-      - DOCKER_INFLUXDB_INIT_BUCKET=waf-realtime
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_ADMIN_USERNAME}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
       - DOCKER_INFLUXDB_INIT_RETENTION=7d
     volumes:
       - influxdb-data:/var/lib/influxdb2
@@ -222,9 +222,9 @@ services:
       - KAFKA_TOPIC=waf-realtime-events
       - KAFKA_GROUP=realtime-processor
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=2MCyOVVBMB5q-gPpDZkkYBMDGSQb-ilFP8EgVnqqaJj8I0ViCz6w__RHHOcTe676LbrHabkFRnvJ8_Y1QKe8Vw==
-      - INFLUXDB_ORG=waf-org
-      - INFLUXDB_BUCKET=waf-realtime
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
       - INFLUXDB_DUAL_WRITE=true
       - GEOIP_DB_PATH=/data/GeoLite2-City.mmdb
     volumes:
@@ -249,8 +249,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
@@ -267,9 +267,9 @@ services:
       - "8123:8123"
       - "9000:9000"
     environment:
-      - CLICKHOUSE_DB=waf_analytics
-      - CLICKHOUSE_USER=admin
-      - CLICKHOUSE_PASSWORD=adminpassword
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro

@@ -3,7 +3,6 @@ package kr.rojae.waf.common.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -51,7 +50,7 @@ public class RuleDeployment {
     private String rolloutStatus;
 
     // Timing information
-    @CreationTimestamp
+    // @CreationTimestamp
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 

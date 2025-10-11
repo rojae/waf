@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
@@ -86,14 +84,14 @@ public class CustomRule {
     @Column(name = "created_by")
     private String createdBy;
 
-    @CreationTimestamp
+    // @CreationTimestamp
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
     @Column(name = "updated_by")
     private String updatedBy;
 
-    @UpdateTimestamp
+    // @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 

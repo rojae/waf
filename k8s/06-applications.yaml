@@ -73,7 +73,11 @@ spec:
         - name: KAFKA_BOOTSTRAP_SERVERS
           value: "kafka.waf-processing.svc.cluster.local:9092"
         - name: CORS_ALLOWED_ORIGINS
-          value: "https://c5e94b25ca8c.ngrok-free.app"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: public-domain
+              optional: true
         volumeMounts:
         - name: custom-rules
           mountPath: /app/custom-rules
@@ -105,9 +109,9 @@ spec:
         persistentVolumeClaim:
           claimName: waf-custom-rules-pvc
       - name: modsec-rules
-        hostPath:
-          path: /Users/jaeseoh/Documents/workspace/waf/nginx/modsecurity/rules
-          type: Directory
+        configMap:
+          name: modsecurity-rules
+          optional: true
 
 ---
 # WAF Dashboard API Service
@@ -192,13 +196,29 @@ spec:
               name: waf-auth-secrets
               key: jwt-secret
         - name: COOKIE_DOMAIN
-          value: "https://c5e94b25ca8c.ngrok-free.app"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: cookie-domain
+              optional: true
         - name: GOOGLE_OAUTH_REDIRECT_URI
-          value: "https://c5e94b25ca8c.ngrok-free.app/login/oauth2/code/google"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: google-oauth-redirect-uri
+              optional: true
         - name: OAUTH_CALLBACK_BASE_URL
-          value: "https://c5e94b25ca8c.ngrok-free.app"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: oauth-callback-base-url
+              optional: true
         - name: OAUTH_DEFAULT_REDIRECT_URL
-          value: "https://c5e94b25ca8c.ngrok-free.app"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: oauth-default-redirect-url
+              optional: true
         resources:
           requests:
             memory: "256Mi"
@@ -313,7 +333,11 @@ spec:
         - name: DASHBOARD_API_URL
           value: "http://waf-dashboard-api.waf-system.svc.cluster.local:8082"
         - name: NEXT_PUBLIC_SOCIAL_API_URL
-          value: "https://c5e94b25ca8c.ngrok-free.app"
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: public-domain
+              optional: true
         - name: NEXT_PUBLIC_DASHBOARD_API_URL
           value: "http://waf-dashboard-api.waf-system.svc.cluster.local:8082"
         - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID

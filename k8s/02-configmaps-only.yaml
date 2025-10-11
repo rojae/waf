@@ -52,21 +52,6 @@ data:
         Time_Keep   On
 
 ---
-# Secret for authentication - TEMPLATE VERSION
-apiVersion: v1
-kind: Secret
-metadata:
-  name: waf-auth-secrets
-  namespace: waf-system
-type: Opaque
-data:
-  # values - replace these with your actual credentials
-  google-client-id: ${GOOGLE_CLIENT_ID}  # your Google Client ID
-  google-client-secret: ${GOOGLE_CLIENT_SECRET}  # your Google Client Secret
-  jwt-secret: ${JWT_SECRET}  # your JWT secret (32 bytes recommended)
-  nextauth-secret: ${NEXTAUTH_SECRET}  # your NextAuth secret
-
----
 # ConfigMap for InfluxDB token and defaults - TEMPLATE VERSION
 apiVersion: v1
 kind: ConfigMap
@@ -92,7 +77,6 @@ data:
   google-oauth-redirect-uri: "${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8081/login/oauth2/code/google}"
   oauth-callback-base-url: "${OAUTH_CALLBACK_BASE_URL:-http://localhost:8081}"
   oauth-default-redirect-url: "${OAUTH_DEFAULT_REDIRECT_URL:-http://localhost:3001}"
-
 ---
 # ConfigMap for Kafka topics script (expanded topics to match compose + DDL)
 apiVersion: v1

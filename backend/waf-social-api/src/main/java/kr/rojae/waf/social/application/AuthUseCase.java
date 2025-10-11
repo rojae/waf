@@ -73,8 +73,8 @@ public class AuthUseCase {
                 cookieDomain,
                 "/",
                 accessTokenService.ttlSeconds(),
-                false, // secure - false for localhost
-                false, // httpOnly - false to allow JavaScript access
+                false, // secure - false for localhost (set to true in production)
+                true,  // httpOnly - true to prevent XSS attacks
                 "Lax"  // sameSite
             );
         } catch (Exception e) {

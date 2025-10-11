@@ -129,11 +129,43 @@ flowchart TB
 
 ### 개발 환경 설정
 
+#### 1️⃣ 환경 변수 설정 (필수)
+
+프로젝트를 실행하기 전에 환경 변수를 설정해야 합니다:
+
 ```bash
 # 저장소 클론
 git clone https://github.com/rojae/waf
 cd waf
 
+# .env 파일 생성
+cp .env.example .env
+
+# .env 파일 편집 (필수!)
+vim .env
+```
+
+**최소한 설정해야 할 환경 변수:**
+
+```bash
+# 1. JWT 시크릿 생성 (32+ 바이트)
+openssl rand -base64 32
+# -> 출력된 값을 .env의 JWT_SECRET에 입력
+
+# 2. NextAuth 시크릿 생성
+openssl rand -base64 32
+# -> 출력된 값을 .env의 NEXTAUTH_SECRET에 입력
+
+# 3. 데이터베이스 비밀번호 변경
+# .env 파일에서 다음 값들을 변경:
+# - INFLUXDB_ADMIN_PASSWORD
+# - CLICKHOUSE_PASSWORD
+# - GRAFANA_ADMIN_PASSWORD
+```
+
+#### 2️⃣ 서비스 시작
+
+```bash
 # 통합 시작업 스크립트 사용 (권장)
 ./startup.sh
 ```
