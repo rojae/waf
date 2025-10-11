@@ -7,7 +7,15 @@
 /GeoLite2-City/*
 lib/geoip/*
 .*/*
+
+##############################
+## Environment Variables (NEVER COMMIT!)
+##############################
 .env
+.env.dev
+.env.staging
+.env.prod
+.env.local
 
 ##############################
 ## Java
