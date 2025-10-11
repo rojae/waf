@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -38,11 +36,11 @@ public class RuleCategory {
     @Column(name = "color")
     private String color = "#007bff";
 
-    @CreationTimestamp
+    // @CreationTimestamp
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @UpdateTimestamp
+    // @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
