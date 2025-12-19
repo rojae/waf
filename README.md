@@ -1,11 +1,11 @@
-# 🛡️ 엔터프라이즈 웹 애플리케이션 방화벽 (WAF) 플랫폼
+# 🛡️ 웹 애플리케이션 방화벽 (WAF) 플랫폼
 
 ![Version](https://img.shields.io/badge/version-v1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![Status](https://img.shields.io/badge/status-production--ready-green)
 
-**Nginx + ModSecurity + OWASP CRS (Core Rule Set)**로 구축된 **엔터프라이즈급 웹 애플리케이션 방화벽**으로, 지능형 이중 트랙 로그 처리, 실시간 위협 탐지, 포괄적인 보안 분석 기능을 제공합니다.
+Nginx + ModSecurity + OWASP CRS (Core Rule Set)로 구축된 **엔터프라이즈급 웹 애플리케이션 방화벽**으로, 지능형 이중 트랙 로그 처리, 실시간 위협 탐지, 포괄적인 보안 분석 기능을 제공합니다.
 
 [🇺🇸 English Version](README.en.md)
 
