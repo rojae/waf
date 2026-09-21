@@ -140,8 +140,8 @@ const parseWafLog = (rawData: any): RealtimeLog => {
       const messages = rawData.messages || []
       
       // 공격 유형 분석
-      const attackTypes = []
-      const ruleIds = []
+      const attackTypes: string[] = []
+      const ruleIds: string[] = []
       let maxSeverity = 0
       
       messages.forEach((msg: any) => {
@@ -219,105 +219,130 @@ const parseWafLog = (rawData: any): RealtimeLog => {
   }
 }
 
+type EventSourceLike = EventSource & {
+  addEventListener(type: 'log' | 'connection', listener: (event: MessageEvent<string>) => void): void
+}
+
+type RealtimeConnectionOptions = {
+  createEventSource?: (url: string, init: EventSourceInit) => EventSourceLike
+  onOpen: () => void
+  onLog: (event: MessageEvent<string>) => void
+  onConnection: (event: MessageEvent<string>) => void
+  onError: (readyState: number) => void
+}
+
+export function createRealtimeLogConnection({
+  createEventSource = (url, init) => new EventSource(url, init) as EventSourceLike,
+  onOpen,
+  onLog,
+  onConnection,
+  onError,
+}: RealtimeConnectionOptions) {
+  const eventSource = createEventSource('/api/realtime/logs/stream', { withCredentials: true })
+  eventSource.onopen = onOpen
+  eventSource.addEventListener('log', onLog)
+  eventSource.addEventListener('connection', onConnection)
+  eventSource.onerror = () => onError(eventSource.readyState)
+  return eventSource
+}
+
 export const useRealtimeLogs = (maxLogs: number = 100) => {
   const [logs, setLogs] = useState<RealtimeLog[]>([])
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
   const lastHeartbeatRef = useRef<Date>(new Date())
 
   useEffect(() => {
+    let mounted = true
+
+    const clearHeartbeat = () => {
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current)
+        heartbeatRef.current = null
+      }
+    }
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
+
+    const closeCurrent = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+    }
+
     const connectToStream = () => {
+      if (!mounted) return
       try {
-        // Close existing connection
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close()
-        }
+        clearReconnectTimer()
+        clearHeartbeat()
+        closeCurrent()
 
-        const eventSource = new EventSource(`/api/realtime/logs/stream`, {
-          withCredentials: false
-        })
-        eventSourceRef.current = eventSource
+        eventSourceRef.current = createRealtimeLogConnection({
+          onOpen: () => {
+            if (!mounted) return
+            setConnected(true)
+            setError(null)
+            lastHeartbeatRef.current = new Date()
 
-        eventSource.onopen = () => {
-          console.log('Realtime log stream connected')
-          setConnected(true)
-          setError(null)
-          lastHeartbeatRef.current = new Date()
-          
-          // Heartbeat 체크 시작 (30초마다)
-          if (heartbeatRef.current) {
-            clearInterval(heartbeatRef.current)
-          }
-          heartbeatRef.current = setInterval(() => {
-            const now = new Date()
-            const timeDiff = now.getTime() - lastHeartbeatRef.current.getTime()
-            
-            // 1분 이상 메시지가 없으면 재연결 시도
-            if (timeDiff > 60000) {
-              console.log('No heartbeat for 60s, attempting reconnect...')
-              connectToStream()
+            clearHeartbeat()
+            heartbeatRef.current = setInterval(() => {
+              const timeDiff = Date.now() - lastHeartbeatRef.current.getTime()
+              if (timeDiff > 60000) {
+                connectToStream()
+              }
+            }, 30000)
+          },
+          onLog: (event) => {
+            lastHeartbeatRef.current = new Date()
+
+            try {
+              const rawLogData = JSON.parse(event.data)
+              const realtimeLog = parseWafLog(rawLogData)
+
+              setLogs(prevLogs => [realtimeLog, ...prevLogs].slice(0, maxLogs))
+            } catch {
+              const fallbackLog: RealtimeLog = {
+                id: `${Date.now()}-fallback`,
+                timestamp: new Date().toISOString(),
+                level: 'INFO',
+                message: event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''),
+                rawData: event.data
+              }
+              setLogs(prevLogs => [fallbackLog, ...prevLogs.slice(0, maxLogs - 1)])
             }
-          }, 30000)
-        }
+          },
+          onConnection: () => {
+            lastHeartbeatRef.current = new Date()
+          },
+          onError: (readyState) => {
+            if (!mounted) return
+            setConnected(false)
 
-        eventSource.addEventListener('log', (event) => {
-          lastHeartbeatRef.current = new Date() // 메시지 수신시 heartbeat 업데이트
-          
-          try {
-            const rawLogData = JSON.parse(event.data)
-            const realtimeLog = parseWafLog(rawLogData)
-
-            setLogs(prevLogs => {
-              const newLogs = [realtimeLog, ...prevLogs]
-              return newLogs.slice(0, maxLogs) // Keep only recent logs
-            })
-          } catch (parseError) {
-            console.warn('Failed to parse log event:', parseError)
-            // Fallback for non-JSON messages
-            const fallbackLog: RealtimeLog = {
-              id: `${Date.now()}-fallback`,
-              timestamp: new Date().toISOString(),
-              level: 'INFO',
-              message: event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''),
-              rawData: event.data
-            }
-            setLogs(prevLogs => [fallbackLog, ...prevLogs.slice(0, maxLogs - 1)])
-          }
-        })
-
-        eventSource.addEventListener('connection', (event) => {
-          console.log('Connection event:', event.data)
-          lastHeartbeatRef.current = new Date() // 연결 메시지도 heartbeat 업데이트
-        })
-
-        eventSource.onerror = (event) => {
-          console.error('Realtime log stream error:', event)
-          setConnected(false)
-          
-          // EventSource 상태에 따른 처리
-          if (eventSourceRef.current) {
-            const readyState = eventSourceRef.current.readyState
-            console.log('EventSource readyState:', readyState)
-            
             if (readyState === EventSource.CLOSED) {
               setError('Connection closed, attempting to reconnect...')
-              // 5초 후 재연결 시도
-              setTimeout(() => {
-                console.log('Attempting to reconnect...')
-                connectToStream()
-              }, 5000)
+              clearReconnectTimer()
+              reconnectTimerRef.current = setTimeout(connectToStream, 5000)
             } else if (readyState === EventSource.CONNECTING) {
               setError('Connecting to realtime logs...')
             } else {
               setError('Connection error occurred')
             }
-          }
+          },
+        })
+      } catch {
+        if (mounted) {
+          setConnected(false)
+          setError('Failed to connect to realtime stream')
         }
-      } catch (err) {
-        console.error('Failed to connect to realtime stream:', err)
-        setError('Failed to connect to realtime stream')
       }
     }
 
@@ -325,10 +350,11 @@ export const useRealtimeLogs = (maxLogs: number = 100) => {
 
     // Cleanup on unmount
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-        eventSourceRef.current = null
-      }
+      mounted = false
+      clearReconnectTimer()
+      clearHeartbeat()
+      closeCurrent()
+      setConnected(false)
     }
   }, [maxLogs])
 
@@ -337,31 +363,47 @@ export const useRealtimeLogs = (maxLogs: number = 100) => {
   }
 
   const disconnect = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
-      setConnected(false)
     }
+    setConnected(false)
   }
 
   const reconnect = () => {
     disconnect()
-    // Give a small delay before reconnecting
-    setTimeout(() => {
-      const connectToStream = () => {
-        try {
-          // Use Next.js API route proxy
-          const eventSource = new EventSource(`/api/realtime/logs/stream`, {
-            withCredentials: false
-          })
-          eventSourceRef.current = eventSource
-          setConnected(true)
-          setError(null)
-        } catch (err) {
-          setError('Reconnection failed')
-        }
+    reconnectTimerRef.current = setTimeout(() => {
+      try {
+        eventSourceRef.current = createRealtimeLogConnection({
+          onOpen: () => {
+            setConnected(true)
+            setError(null)
+            lastHeartbeatRef.current = new Date()
+          },
+          onLog: (event) => {
+            const rawLogData = JSON.parse(event.data)
+            const realtimeLog = parseWafLog(rawLogData)
+            setLogs(prevLogs => [realtimeLog, ...prevLogs].slice(0, maxLogs))
+          },
+          onConnection: () => {
+            lastHeartbeatRef.current = new Date()
+          },
+          onError: () => {
+            setConnected(false)
+            setError('Connection error occurred')
+          },
+        })
+      } catch {
+        setError('Reconnection failed')
       }
-      connectToStream()
     }, 100)
   }
 

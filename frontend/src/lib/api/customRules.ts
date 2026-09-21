@@ -35,11 +35,7 @@ interface CreateRuleRequest {
 }
 
 class CustomRuleAPI {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || 'http://localhost:8082';
-  }
+  private baseUrl = '';
 
   async getAllRules(): Promise<CustomRule[]> {
     const response = await fetch(`${this.baseUrl}/api/rules`, {

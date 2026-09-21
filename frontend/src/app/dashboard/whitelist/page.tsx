@@ -64,7 +64,7 @@ export default function WhitelistPage() {
 
   const loadEntries = async () => {
     try {
-      const data = await apiClient.getWhitelist()
+      const data = await apiClient.getWhitelist<WhitelistEntry[]>()
       setEntries(data)
     } catch (error) {
       toast.error('Failed to load whitelist')
@@ -76,7 +76,7 @@ export default function WhitelistPage() {
 
   const handleToggleEntry = async (entry: WhitelistEntry) => {
     try {
-      const updatedEntry = await apiClient.toggleWhitelistEntry(entry.id)
+      const updatedEntry = await apiClient.toggleWhitelistEntry<WhitelistEntry>(entry.id, !entry.enabled)
       setEntries(prev => prev.map(e => e.id === entry.id ? updatedEntry : e))
       toast.success(`Entry ${updatedEntry.enabled ? 'enabled' : 'disabled'}`)
     } catch (error) {
@@ -101,14 +101,14 @@ export default function WhitelistPage() {
     
     try {
       if (editingEntry) {
-        const updatedEntry = await apiClient.updateWhitelistEntry(editingEntry.id, {
+        const updatedEntry = await apiClient.updateWhitelistEntry<WhitelistEntry>(editingEntry.id, {
           ...editingEntry,
           ...formData
         })
         setEntries(prev => prev.map(e => e.id === editingEntry.id ? updatedEntry : e))
         toast.success('Entry updated successfully')
       } else {
-        const newEntry = await apiClient.createWhitelistEntry(formData)
+        const newEntry = await apiClient.createWhitelistEntry<WhitelistEntry>(formData)
         setEntries(prev => [...prev, newEntry])
         toast.success('Entry created successfully')
       }

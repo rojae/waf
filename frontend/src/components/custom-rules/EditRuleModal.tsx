@@ -58,20 +58,14 @@ export default function EditRuleModal({ open, onClose, onRuleUpdated, rule }: Ed
     setLoading(true);
 
     try {
-      // Try to update rule
-      try {
-        await customRuleAPI.updateRule(rule.id, formData);
-        toast.success('Rule updated successfully');
-      } catch (updateError) {
-        console.warn('Update API not available, simulating update:', updateError);
-        toast.success('Rule updated successfully');
-      }
+      await customRuleAPI.updateRule(rule.id, formData);
+      toast.success('Rule draft updated. It is stored but not yet applied to nginx.');
 
       onRuleUpdated();
       onClose();
     } catch (error) {
       console.error('Error updating rule:', error);
-      toast.error('Failed to process rule update');
+      toast.error(error instanceof Error ? error.message : 'Failed to update rule draft');
     } finally {
       setLoading(false);
     }

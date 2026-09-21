@@ -20,9 +20,7 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
-  Divider,
-  Alert as MuiAlert,
-  Grid
+  Divider
 } from '@mui/material';
 import {
   ArrowBack,
@@ -46,7 +44,7 @@ interface Alert {
 }
 
 export default function AlertsPage() {
-  const { user, loading, isAuthenticated } = useAuthGuard();
+  const { loading, isAuthenticated } = useAuthGuard();
   const router = useRouter();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [streamConnected, setStreamConnected] = useState(false);

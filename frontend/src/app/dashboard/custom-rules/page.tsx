@@ -12,7 +12,6 @@ import { toast } from 'sonner';
 export default function DashboardCustomRulesPage() {
   const [rules, setRules] = useState<CustomRule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingRule, setEditingRule] = useState<CustomRule | null>(null);
@@ -32,48 +31,6 @@ export default function DashboardCustomRulesPage() {
     } catch (error) {
       console.error('Error loading rules:', error);
       toast.error('Failed to load custom rules');
-      // Fallback to demo data if API fails
-      setRules([
-        {
-          id: 1,
-          name: 'SQL Injection Protection',
-          description: 'Blocks SQL injection attempts in request parameters',
-          enabled: true,
-          severity: 'HIGH' as const,
-          category: 'SQL Injection',
-          priority: 100,
-          variables: 'ARGS',
-          operator: '@detectSQLi',
-          operatorData: '',
-          actions: 'id:900001,phase:2,block,msg:"SQL Injection Attack Detected"'
-        },
-        {
-          id: 2,
-          name: 'XSS Protection',
-          description: 'Detects cross-site scripting attempts',
-          enabled: true,
-          severity: 'MEDIUM' as const,
-          category: 'XSS',
-          priority: 100,
-          variables: 'ARGS',
-          operator: '@detectXSS',
-          operatorData: '',
-          actions: 'id:900002,phase:2,block,msg:"XSS Attack Detected"'
-        },
-        {
-          id: 3,
-          name: 'File Upload Filter',
-          description: 'Restricts malicious file uploads',
-          enabled: false,
-          severity: 'HIGH' as const,
-          category: 'File Upload',
-          priority: 100,
-          variables: 'FILES_NAMES',
-          operator: '@rx',
-          operatorData: '\\.(php|jsp|asp|aspx|sh|pl|py)$',
-          actions: 'id:900003,phase:2,block,msg:"Malicious File Upload Detected"'
-        }
-      ]);
     } finally {
       setLoading(false);
     }
@@ -90,66 +47,26 @@ export default function DashboardCustomRulesPage() {
 
   const handleToggleRule = async (ruleId: number, enabled: boolean) => {
     try {
-      // Try API call first
-      await customRuleAPI.toggleRule(ruleId, enabled);
+      const updatedRule = await customRuleAPI.toggleRule(ruleId, enabled);
       setRules(prev => prev.map(rule =>
-        rule.id === ruleId ? { ...rule, enabled } : rule
+        rule.id === ruleId ? updatedRule : rule
       ));
-      toast.success(`Rule ${enabled ? 'enabled' : 'disabled'} successfully`);
+      toast.success(`Stored draft ${enabled ? 'enabled' : 'disabled'}. Not yet applied to nginx.`);
     } catch (error) {
       console.error('Error toggling rule:', error);
-
-      // Fallback: Update locally since backend is not available
-      setRules(prev => prev.map(rule =>
-        rule.id === ruleId ? { ...rule, enabled } : rule
-      ));
-      toast.success(`Rule ${enabled ? 'enabled' : 'disabled'} successfully`);
+      toast.error('Failed to toggle stored draft. Existing state was kept.');
     }
   };
 
   const handleDeploy = async () => {
     try {
       setDeploying(true);
-      const deploymentResult = await customRuleAPI.deployRules();
-      setDeployment(deploymentResult);
-      toast.success('Deployment started successfully');
-
-      // Poll for deployment status
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await customRuleAPI.getDeploymentStatus();
-          setDeployment(status);
-
-          if (status && ['COMPLETED', 'FAILED'].includes(status.deploymentStatus)) {
-            clearInterval(pollInterval);
-            setDeploying(false);
-
-            if (status.deploymentStatus === 'COMPLETED') {
-              toast.success('Rules deployed successfully!');
-            } else {
-              toast.error(`Deployment failed: ${status.errorMessage || 'Unknown error'}`);
-            }
-          }
-        } catch (error) {
-          console.error('Error polling deployment status:', error);
-          clearInterval(pollInterval);
-          setDeploying(false);
-        }
-      }, 2000);
-
+      await customRuleAPI.deployRules();
     } catch (error) {
       console.error('Error deploying rules:', error);
-
-      // Fallback: Simulate deployment since backend is not available
+      toast.error(error instanceof Error ? error.message : 'Rule deployment is intentionally unavailable');
+    } finally {
       setDeploying(false);
-      toast.success('Rules deployed successfully');
-
-      const mockDeployment = {
-        id: Date.now(),
-        deploymentStatus: 'COMPLETED' as const,
-        deployedAt: new Date().toISOString(),
-      };
-      setDeployment(mockDeployment);
     }
   };
 
@@ -168,17 +85,14 @@ export default function DashboardCustomRulesPage() {
     loadRules(); // Reload rules to get fresh data
   };
 
-  const handleAddNewRule = (newRule: CustomRule) => {
-    // Add new rule to local state
-    setRules(prev => [...prev, { ...newRule, id: Date.now() }]);
-  };
-
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold">Custom Rules Management</h1>
-          <p className="text-gray-600 mt-2">Create and manage custom ModSecurity rules</p>
+          <p className="text-gray-600 mt-2">
+            {loading ? 'Loading stored drafts...' : 'Create and manage stored ModSecurity rule drafts. Drafts are not applied to nginx yet.'}
+          </p>
         </div>
         <Button
           className="bg-blue-600 hover:bg-blue-700"
@@ -266,6 +180,7 @@ export default function DashboardCustomRulesPage() {
                     </Badge>
                   </div>
                   <p className="text-gray-600 text-sm">{rule.description}</p>
+                  <p className="text-xs text-gray-500 mt-1">Persistent draft only. Enable/disable is stored, not deployed.</p>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -298,7 +213,7 @@ export default function DashboardCustomRulesPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 mb-2">
-                Deploy {rules.filter(r => r.enabled).length} active rules to WAF instances
+                Deployment is unavailable until real nginx validation and reload are wired.
               </p>
               <p className="text-xs text-gray-500">
                 {deployment ? (
