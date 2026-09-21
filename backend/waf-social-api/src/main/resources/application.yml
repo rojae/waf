@@ -21,9 +21,11 @@ spring:
 app:
   oauth:
     callback-base-url: ${OAUTH_CALLBACK_BASE_URL:http://localhost:8081}
-    default-redirect-url: ${OAUTH_DEFAULT_REDIRECT_URL:http://localhost:3001}
+    default-redirect-url: ${OAUTH_DEFAULT_REDIRECT_URL:/dashboard}
+    state-ttl-seconds: ${OAUTH_STATE_TTL_SECONDS:300}
   jwt:
     secret: ${JWT_SECRET}  # REQUIRED: Must be set in environment variables (32+ characters recommended)
     access-ttl-seconds: 900
     cookie-name: WAF_AT
     cookie-domain: ${COOKIE_DOMAIN:localhost}
+    cookie-secure: ${COOKIE_SECURE:false}

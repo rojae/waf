@@ -2,8 +2,6 @@ package kr.rojae.waf.dashboard.domain.rules;
 
 import kr.rojae.waf.dashboard.dto.CustomRuleDto;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -15,7 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-@Service
+@Deprecated
 @Slf4j
 public class ModSecurityRuleManager {
 
@@ -187,7 +185,6 @@ public class ModSecurityRuleManager {
     /**
      * 주기적 파일 동기화 (5분마다)
      */
-    @Scheduled(fixedRate = 300000) // 5분
     public void scheduledFileSync() {
         if (syncInProgress.get()) {
             log.debug("Sync already in progress, skipping scheduled sync");

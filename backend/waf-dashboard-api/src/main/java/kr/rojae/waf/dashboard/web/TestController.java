@@ -4,6 +4,7 @@ import kr.rojae.waf.dashboard.service.RealtimeLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -12,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/test")
+@ConditionalOnProperty(name = "app.debug.test-routes-enabled", havingValue = "true")
 @RequiredArgsConstructor
 @Slf4j
 public class TestController {
