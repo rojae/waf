@@ -3,25 +3,18 @@
 import { useAuth } from "@/lib/auth"
 import { 
   Box, 
-  Card, 
-  CardContent, 
   Button, 
   Typography, 
   Avatar, 
   Chip, 
-  Grid, 
   Container,
   Paper,
   Stack,
   Divider,
-  useTheme,
   alpha
 } from '@mui/material'
 import { 
   Security, 
-  Analytics, 
-  Visibility, 
-  Public, 
   Google as GoogleIcon,
   ShieldOutlined,
   LockOutlined,
@@ -44,7 +37,6 @@ const pulse = keyframes`
 
 export default function SignIn() {
   const { login } = useAuth()
-  const theme = useTheme()
 
   return (
     <Box
@@ -160,47 +152,6 @@ export default function SignIn() {
                 Enterprise Web Application Firewall
               </Typography>
             </Box>
-
-            {/* Features Grid */}
-            <Grid container spacing={2}>
-              {[
-                // { icon: <Security />, label: 'Real-time Protection', color: '#3b82f6' },
-                // { icon: <Analytics />, label: 'Advanced Analytics', color: '#6366f1' },
-                // { icon: <Visibility />, label: 'Monitoring', color: '#06b6d4' },
-                // { icon: <Public />, label: 'Global Security', color: '#8b5cf6' },
-              ].map((item, index) => (
-                <Grid item xs={6} key={index}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      background: alpha('#ffffff', 0.05),
-                      backdropFilter: 'blur(10px)',
-                      border: `1px solid ${alpha('#ffffff', 0.1)}`,
-                      borderRadius: 2,
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        background: alpha('#ffffff', 0.08),
-                        transform: 'translateY(-4px)',
-                      },
-                    }}
-                  >
-                    <Box sx={{ color: item.color, mb: 1 }}>
-                      {item.icon}
-                    </Box>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: alpha('#ffffff', 0.7),
-                        fontWeight: 500,
-                      }}
-                    >
-                      {item.label}
-                    </Typography>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
 
             {/* Login Button */}
             <Button

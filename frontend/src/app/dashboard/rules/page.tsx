@@ -30,19 +30,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Plus, Pencil, Trash2 } from "lucide-react"
 import { apiClient } from "@/lib/api"
+import { CustomRule, CreateRuleRequest } from "@/lib/api/customRules"
 import { toast } from "sonner"
-
-interface CustomRule {
-  id: string
-  name: string
-  pattern: string
-  action: string
-  enabled: boolean
-  description: string
-  priority: number
-  createdAt: string
-  updatedAt: string
-}
 
 export default function RulesPage() {
   const { user, loading } = useAuthGuard()
@@ -52,13 +41,17 @@ export default function RulesPage() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [editingRule, setEditingRule] = useState<CustomRule | null>(null)
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<CreateRuleRequest>({
     name: '',
-    pattern: '',
-    action: 'BLOCK',
-    enabled: true,
     description: '',
-    priority: 100
+    severity: 'MEDIUM',
+    category: '',
+    variables: 'ARGS',
+    operator: '@rx',
+    operatorData: '',
+    actions: 'id:900001,phase:2,block,msg:"Stored Draft Rule"',
+    priority: 100,
+    enabled: true,
   })
 
   useEffect(() => {
@@ -70,7 +63,7 @@ export default function RulesPage() {
 
   const loadRules = async () => {
     try {
-      const data = await apiClient.getRules() as CustomRule[]
+      const data = await apiClient.getRules<CustomRule[]>()
       setRules(data)
     } catch (error) {
       toast.error('Failed to load rules')
@@ -82,9 +75,9 @@ export default function RulesPage() {
 
   const handleToggleRule = async (rule: CustomRule) => {
     try {
-      const updatedRule = await apiClient.toggleRule(rule.id) as CustomRule
+      const updatedRule = await apiClient.toggleRule<CustomRule>(String(rule.id), !rule.enabled)
       setRules(prev => prev.map(r => r.id === rule.id ? updatedRule : r))
-      toast.success(`Rule ${updatedRule.enabled ? 'enabled' : 'disabled'}`)
+      toast.success(`Stored draft ${updatedRule.enabled ? 'enabled' : 'disabled'}. Not yet applied to nginx.`)
     } catch (error) {
       toast.error('Failed to toggle rule')
       console.error('Error toggling rule:', error)
@@ -94,7 +87,7 @@ export default function RulesPage() {
   const handleDeleteRule = async (ruleId: string) => {
     try {
       await apiClient.deleteRule(ruleId)
-      setRules(prev => prev.filter(r => r.id !== ruleId))
+      setRules(prev => prev.filter(r => String(r.id) !== ruleId))
       toast.success('Rule deleted successfully')
     } catch (error) {
       toast.error('Failed to delete rule')
@@ -107,27 +100,28 @@ export default function RulesPage() {
     
     try {
       if (editingRule) {
-        const updatedRule = await apiClient.updateRule(editingRule.id, {
-          ...editingRule,
-          ...formData
-        })
+        const updatedRule = await apiClient.updateRule<CustomRule>(String(editingRule.id), formData)
         setRules(prev => prev.map(r => r.id === editingRule.id ? updatedRule : r))
-        toast.success('Rule updated successfully')
+        toast.success('Rule draft updated. Changes are stored but not yet applied.')
       } else {
-        const newRule = await apiClient.createRule(formData)
+        const newRule = await apiClient.createRule<CustomRule>(formData)
         setRules(prev => [...prev, newRule])
-        toast.success('Rule created successfully')
+        toast.success('Rule draft created. It is not yet applied to nginx.')
       }
       
       setShowCreateForm(false)
       setEditingRule(null)
       setFormData({
         name: '',
-        pattern: '',
-        action: 'BLOCK',
-        enabled: true,
         description: '',
-        priority: 100
+        severity: 'MEDIUM',
+        category: '',
+        variables: 'ARGS',
+        operator: '@rx',
+        operatorData: '',
+        actions: 'id:900001,phase:2,block,msg:"Stored Draft Rule"',
+        priority: 100,
+        enabled: true,
       })
     } catch (error) {
       toast.error('Failed to save rule')
@@ -139,8 +133,12 @@ export default function RulesPage() {
     setEditingRule(rule)
     setFormData({
       name: rule.name,
-      pattern: rule.pattern,
-      action: rule.action,
+      severity: rule.severity,
+      category: rule.category,
+      variables: rule.variables || 'ARGS',
+      operator: rule.operator || '@rx',
+      operatorData: rule.operatorData || '',
+      actions: rule.actions || 'id:900001,phase:2,block,msg:"Stored Draft Rule"',
       enabled: rule.enabled,
       description: rule.description,
       priority: rule.priority
@@ -192,7 +190,7 @@ export default function RulesPage() {
               <CardHeader>
                 <CardTitle>{editingRule ? 'Edit Rule' : 'Create New Rule'}</CardTitle>
                 <CardDescription>
-                  {editingRule ? 'Update the rule configuration' : 'Define a new custom security rule'}
+                  {editingRule ? 'Update the stored draft rule' : 'Define a stored draft security rule. Drafts are not applied to nginx yet.'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -209,27 +207,29 @@ export default function RulesPage() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="action">Action</Label>
+                      <Label htmlFor="severity">Severity</Label>
                       <select
-                        id="action"
-                        value={formData.action}
-                        onChange={(e) => setFormData(prev => ({...prev, action: e.target.value}))}
+                        id="severity"
+                        value={formData.severity}
+                        onChange={(e) => setFormData(prev => ({...prev, severity: e.target.value as CreateRuleRequest['severity']}))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="BLOCK">Block</option>
-                        <option value="ALLOW">Allow</option>
-                        <option value="LOG">Log Only</option>
+                        <option value="CRITICAL">Critical</option>
+                        <option value="HIGH">High</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="LOW">Low</option>
+                        <option value="INFO">Info</option>
                       </select>
                     </div>
                   </div>
                   
                   <div>
-                    <Label htmlFor="pattern">Pattern (Regex)</Label>
+                    <Label htmlFor="category">Category</Label>
                     <Input
-                      id="pattern"
-                      value={formData.pattern}
-                      onChange={(e) => setFormData(prev => ({...prev, pattern: e.target.value}))}
-                      placeholder="e.g., (?i)(union|select|insert|update|delete)"
+                      id="category"
+                      value={formData.category}
+                      onChange={(e) => setFormData(prev => ({...prev, category: e.target.value}))}
+                      placeholder="e.g., SQL Injection"
                       required
                     />
                   </div>
@@ -246,12 +246,56 @@ export default function RulesPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
+                      <Label htmlFor="variables">Variables</Label>
+                      <Input
+                        id="variables"
+                        value={formData.variables}
+                        onChange={(e) => setFormData(prev => ({...prev, variables: e.target.value}))}
+                        placeholder="ARGS"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="operator">Operator</Label>
+                      <Input
+                        id="operator"
+                        value={formData.operator}
+                        onChange={(e) => setFormData(prev => ({...prev, operator: e.target.value}))}
+                        placeholder="@rx"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="operatorData">Operator Data / Pattern</Label>
+                    <Input
+                      id="operatorData"
+                      value={formData.operatorData}
+                      onChange={(e) => setFormData(prev => ({...prev, operatorData: e.target.value}))}
+                      placeholder="e.g., (?i)(union|select|insert|update|delete)"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="actions">Actions</Label>
+                    <Input
+                      id="actions"
+                      value={formData.actions}
+                      onChange={(e) => setFormData(prev => ({...prev, actions: e.target.value}))}
+                      placeholder={'id:900001,phase:2,block,msg:"Stored Draft Rule"'}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
                       <Label htmlFor="priority">Priority</Label>
                       <Input
                         id="priority"
                         type="number"
                         value={formData.priority}
-                        onChange={(e) => setFormData(prev => ({...prev, priority: parseInt(e.target.value)}))}
+                        onChange={(e) => setFormData(prev => ({...prev, priority: parseInt(e.target.value, 10) || 100}))}
                         placeholder="100"
                         min="1"
                         max="999"
@@ -264,6 +308,7 @@ export default function RulesPage() {
                         onCheckedChange={(enabled) => setFormData(prev => ({...prev, enabled}))}
                       />
                       <Label htmlFor="enabled">Enabled</Label>
+                      <span className="text-xs text-muted-foreground">Stored draft only</span>
                     </div>
                   </div>
 
@@ -274,11 +319,15 @@ export default function RulesPage() {
                       setEditingRule(null)
                       setFormData({
                         name: '',
-                        pattern: '',
-                        action: 'BLOCK',
-                        enabled: true,
                         description: '',
-                        priority: 100
+                        severity: 'MEDIUM',
+                        category: '',
+                        variables: 'ARGS',
+                        operator: '@rx',
+                        operatorData: '',
+                        actions: 'id:900001,phase:2,block,msg:"Stored Draft Rule"',
+                        priority: 100,
+                        enabled: true,
                       })
                     }}>
                       Cancel
@@ -294,7 +343,7 @@ export default function RulesPage() {
             <CardHeader>
               <CardTitle>Security Rules ({rules.length})</CardTitle>
               <CardDescription>
-                Manage custom security rules for your WAF
+                Stored custom rule drafts. These records are persistent, but deploy is unavailable until nginx validation and reload are wired.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -303,7 +352,7 @@ export default function RulesPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Pattern</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Severity</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
@@ -322,18 +371,18 @@ export default function RulesPage() {
                       </TableCell>
                       <TableCell>
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          {rule.pattern.length > 50 
-                            ? `${rule.pattern.slice(0, 50)}...` 
-                            : rule.pattern
+                          {(rule.operatorData || rule.operator || '').length > 50
+                            ? `${(rule.operatorData || rule.operator || '').slice(0, 50)}...`
+                            : (rule.operatorData || rule.operator || 'No pattern')
                           }
                         </code>
                       </TableCell>
                       <TableCell>
                         <Badge variant={
-                          rule.action === 'BLOCK' ? 'destructive' : 
-                          rule.action === 'ALLOW' ? 'secondary' : 'outline'
+                          rule.severity === 'CRITICAL' || rule.severity === 'HIGH' ? 'destructive' :
+                          rule.severity === 'MEDIUM' ? 'secondary' : 'outline'
                         }>
-                          {rule.action}
+                          {rule.severity}
                         </Badge>
                       </TableCell>
                       <TableCell>{rule.priority}</TableCell>
@@ -344,7 +393,7 @@ export default function RulesPage() {
                             onCheckedChange={() => handleToggleRule(rule)}
                           />
                           <Badge variant={rule.enabled ? 'secondary' : 'outline'}>
-                            {rule.enabled ? 'Enabled' : 'Disabled'}
+                            {rule.enabled ? 'Draft enabled' : 'Draft disabled'}
                           </Badge>
                         </div>
                       </TableCell>
@@ -373,7 +422,7 @@ export default function RulesPage() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => handleDeleteRule(rule.id)}
+                                  onClick={() => handleDeleteRule(String(rule.id))}
                                   className="bg-red-600 hover:bg-red-700"
                                 >
                                   Delete

@@ -6,7 +6,8 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --test tests/regression.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

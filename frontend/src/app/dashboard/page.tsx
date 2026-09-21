@@ -24,7 +24,6 @@ import {
   Stack
 } from '@mui/material'
 import {
-  Security,
   Block,
   Assignment,
   List,
@@ -65,6 +64,7 @@ interface MetricsData {
   geoStats: Record<string, number>
   severityStats: Record<string, number>
   hourlyStats?: Record<string, number>
+  systemStatus?: string
 }
 
 interface ChartData {
@@ -80,6 +80,7 @@ export default function Dashboard() {
   const router = useRouter()
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
+  const [metricsError, setMetricsError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
   const [refreshing, setRefreshing] = useState(false)
 
@@ -98,10 +99,14 @@ export default function Dashboard() {
       if (response.ok) {
         const data = await response.json()
         setMetrics(data)
+        setMetricsError(null)
         setLastUpdated(new Date())
+      } else {
+        setMetricsError(`Metrics unavailable (${response.status})`)
       }
     } catch (error) {
       console.error('Failed to fetch metrics:', error)
+      setMetricsError('Metrics unavailable')
     } finally {
       setMetricsLoading(false)
       setRefreshing(false)
@@ -272,9 +277,9 @@ export default function Dashboard() {
             <Divider orientation="vertical" flexItem />
 
             <Chip
-              icon={<CheckCircle />}
-              label="System Online"
-              color="success"
+              icon={metricsError ? <Warning /> : <CheckCircle />}
+              label={metricsError ? 'Metrics Unknown' : 'Metrics Online'}
+              color={metricsError ? 'warning' : 'success'}
               size="small"
               variant="outlined"
             />
@@ -312,6 +317,11 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <Container maxWidth="xl" sx={{ py: 4 }}>
+        {metricsError && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="body2">{metricsError}</Typography>
+          </Alert>
+        )}
         {refreshing && (
           <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />
         )}
@@ -480,16 +490,16 @@ export default function Dashboard() {
                   <Box sx={{ position: 'relative', zIndex: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                       <Speed sx={{ fontSize: 40, opacity: 0.9 }} />
-                      <Chip label="Healthy" color="success" size="small" sx={{ color: 'white' }} />
+                      <Chip label={metrics?.systemStatus || 'Unknown'} color={metrics?.systemStatus ? 'success' : 'default'} size="small" sx={{ color: 'white' }} />
                     </Box>
                     <Typography variant="h3" component="div" sx={{ fontWeight: 700, mb: 1 }}>
-                      99.9%
+                      Unknown
                     </Typography>
                     <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                      System Uptime
+                      System Status
                     </Typography>
                     <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                      Service availability
+                      Awaiting backend metric
                     </Typography>
                   </Box>
                   <Box sx={{ 
