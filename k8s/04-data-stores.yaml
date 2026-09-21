@@ -139,6 +139,11 @@ spec:
             configMapKeyRef:
               name: influxdb-config
               key: influxdb-bucket
+        - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: waf-influxdb-secrets
+              key: influxdb-token
         - name: DOCKER_INFLUXDB_INIT_RETENTION
           value: "7d"
         - name: INFLUXDB_TOKEN

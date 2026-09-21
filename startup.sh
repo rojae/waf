@@ -1,113 +1,186 @@
 #!/bin/bash
 
-# WAF 전체 시스템 스타트업 스크립트
-set -e
+# WAF local Docker Compose startup script.
+set -euo pipefail
 
-echo "🛡️ Starting WAF Dual-Track Architecture System..."
+echo "🛡️ Starting WAF runtime stack..."
 
-# 환경 변수 확인
-echo "📋 Checking environment configuration..."
 if [ ! -f ".env" ]; then
-    echo "❌ .env file not found! Creating from example..."
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-    else
-        echo "# WAF System Environment Variables" > .env
-        echo "GOOGLE_CLIENT_ID=your-google-client-id" >> .env
-        echo "GOOGLE_CLIENT_SECRET=your-google-client-secret" >> .env
-        echo "JWT_SECRET=change-me-to-32-bytes-secret-key" >> .env
-        echo "INFLUXDB_TOKEN=your-secure-influxdb-token" >> .env
-    fi
-    echo "📝 Please edit .env file with your credentials:"
-    echo "   • GOOGLE_CLIENT_ID: Google OAuth Client ID"
-    echo "   • GOOGLE_CLIENT_SECRET: Google OAuth Client Secret"
-    echo "   • JWT_SECRET: 32-byte secret key for JWT"
-    echo "   • INFLUXDB_TOKEN: InfluxDB authentication token"
+    echo "❌ .env file not found. Create one from .env.example and fill in credentials."
+    echo "   cp .env.example .env"
     exit 1
 fi
 
-echo "✅ Environment file found"
+set -a
+source .env
+set +a
 
-# 파일 권한 설정
-echo "📋 Setting file permissions..."
-[ -f "./fluent-bit/fluent-bit.conf" ] && chmod 644 "./fluent-bit/fluent-bit.conf"
-[ -f "./fluent-bit/parsers.conf" ] && chmod 644 "./fluent-bit/parsers.conf"
-[ -f "./fluent-bit/waf_classifier.lua" ] && chmod 644 "./fluent-bit/waf_classifier.lua"
-[ -f "./ksqldb/ddl.sql" ] && chmod 644 "./ksqldb/ddl.sql"
-[ -f "./clickhouse/init.sql" ] && chmod 644 "./clickhouse/init.sql"
+CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-${CLICKHOUSE_DB:-waf_analytics}}
+CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
+KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+export CLICKHOUSE_DATABASE CLICKHOUSE_PORT KAFKA_BOOTSTRAP_SERVERS
 
-# 필수 디렉토리 생성
-echo "📁 Creating required directories..."
-mkdir -p ./services/realtime-processor
-mkdir -p ./services/alert-processor
-mkdir -p ./fluent-bit
-mkdir -p ./ksqldb
-mkdir -p ./clickhouse
-mkdir -p ./logstash/pipeline
-
-# 빌드 옵션 확인
 BUILD_OPTION=""
-if [ "$1" = "--build" ] || [ "$1" = "-b" ]; then
-    echo "🔨 Building all services (this may take a few minutes)..."
-    BUILD_OPTION="--build"
-elif [ "$1" = "--build-backend" ]; then
-    echo "🔨 Building backend services only..."
-    docker compose build waf-dashboard-api waf-social-api
-elif [ "$1" = "--build-frontend" ]; then
-    echo "🔨 Building frontend only..."
-    docker compose build waf-frontend
-fi
+case "${1:-}" in
+    --build|-b)
+        BUILD_OPTION="--build"
+        ;;
+    --build-backend)
+        docker compose build waf-dashboard-api waf-social-api
+        ;;
+    --build-frontend)
+        docker compose build waf-frontend
+        ;;
+    "")
+        ;;
+    *)
+        echo "❌ Unknown option: $1"
+        echo "Usage: ./startup.sh [--build|-b|--build-backend|--build-frontend]"
+        exit 1
+        ;;
+esac
 
-# 단계적 서비스 시작
-echo "🚀 Phase 1: Starting core infrastructure (Storage & Message Queue)..."
-docker compose up $BUILD_OPTION -d kafka elasticsearch influxdb clickhouse
+for file in \
+    ./fluent-bit/fluent-bit.conf \
+    ./fluent-bit/parsers.conf \
+    ./fluent-bit/waf_classifier.lua \
+    ./ksqldb/ddl.sql \
+    ./clickhouse/init.sql; do
+    [ -f "$file" ] && chmod 644 "$file"
+done
 
-echo "✅ Kafka topic ensure check..."
-sh ./kafka/ensure-topics.sh
+wait_container_condition() {
+    local service="$1"
+    local expected="$2"
+    local timeout_seconds="${3:-180}"
+    local elapsed=0
+    local container_id=""
+    local status=""
+    local health=""
 
-echo "⏳ Waiting for core services to initialize..."
-sleep 30
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        container_id=$(docker compose ps -q "$service" 2>/dev/null || true)
+        if [ -n "$container_id" ]; then
+            status=$(docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)
+            health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container_id" 2>/dev/null || true)
+            case "$expected" in
+                healthy)
+                    if [ "$health" = "healthy" ]; then
+                        echo "✅ $service is healthy"
+                        return 0
+                    fi
+                    if [ -z "$health" ] && [ "$status" = "running" ]; then
+                        echo "✅ $service is running"
+                        return 0
+                    fi
+                    ;;
+                running)
+                    if [ "$status" = "running" ]; then
+                        echo "✅ $service is running"
+                        return 0
+                    fi
+                    ;;
+            esac
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
 
-echo "🚀 Phase 2: Starting stream processing..."
-docker compose up $BUILD_OPTION -d ksqldb logstash
+    echo "❌ $service did not become $expected within ${timeout_seconds}s"
+    docker compose ps "$service" || true
+    docker compose logs --tail=80 "$service" || true
+    return 1
+}
 
-echo "⏳ Waiting for stream processors..."
-sleep 20
+wait_job_success() {
+    local service="$1"
+    local timeout_seconds="${2:-180}"
+    local elapsed=0
+    local container_id=""
+    local status=""
+    local exit_code=""
 
-echo "🚀 Phase 3: Starting WAF applications..."
-docker compose up $BUILD_OPTION -d waf-dashboard-api waf-social-api
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        container_id=$(docker compose ps -q "$service" 2>/dev/null || true)
+        if [ -n "$container_id" ]; then
+            status=$(docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)
+            exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$container_id" 2>/dev/null || true)
+            if [ "$status" = "exited" ] && [ "$exit_code" = "0" ]; then
+                echo "✅ $service completed successfully"
+                return 0
+            fi
+            if [ "$status" = "exited" ] && [ "$exit_code" != "0" ]; then
+                echo "❌ $service exited with code $exit_code"
+                docker compose logs --tail=120 "$service" || true
+                return 1
+            fi
+        fi
+        sleep 3
+        elapsed=$((elapsed + 3))
+    done
 
-echo "⏳ Waiting for backend APIs..."
-sleep 15
+    echo "❌ $service did not complete within ${timeout_seconds}s"
+    docker compose ps "$service" || true
+    docker compose logs --tail=120 "$service" || true
+    return 1
+}
 
-echo "🚀 Phase 4: Starting frontend and processors..."
-docker compose up $BUILD_OPTION -d waf-frontend realtime-processor alert-processor
+compose_up() {
+    docker compose up $BUILD_OPTION -d "$@"
+}
 
-echo "⏳ Waiting for frontend to start..."
-sleep 10
+echo "🚀 Phase 1: Starting storage and message infrastructure..."
+compose_up kafka elasticsearch influxdb clickhouse
+wait_container_condition kafka healthy 180
+wait_container_condition elasticsearch healthy 180
+wait_container_condition influxdb healthy 180
+wait_container_condition clickhouse healthy 180
 
-echo "🚀 Phase 5: Starting monitoring and WAF core..."
-docker compose up $BUILD_OPTION -d grafana kibana nginx fluent-bit
+echo "🚀 Phase 2: Running Kafka topic initialization..."
+compose_up topics-init
+wait_job_success topics-init 180
 
-echo "⏳ Final initialization..."
-sleep 15
+echo "🚀 Phase 3: Starting stream processing services..."
+compose_up ksqldb logstash
+wait_container_condition ksqldb healthy 240
+wait_container_condition logstash running 180
+
+echo "🚀 Phase 4: Running ksqlDB DDL initialization..."
+compose_up ksqldb-cli-init
+wait_job_success ksqldb-cli-init 240
+
+echo "🚀 Phase 5: Starting APIs and processors..."
+compose_up waf-dashboard-api waf-social-api realtime-processor alert-processor kafka-clickhouse-consumer
+wait_container_condition waf-dashboard-api running 180
+wait_container_condition waf-social-api running 180
+wait_container_condition realtime-processor running 180
+wait_container_condition alert-processor running 180
+wait_container_condition kafka-clickhouse-consumer running 180
+
+echo "🚀 Phase 6: Starting frontend, monitoring, and WAF ingress..."
+compose_up waf-frontend grafana kibana nginx fluent-bit
+wait_container_condition waf-frontend running 180
+wait_container_condition grafana running 180
+wait_container_condition kibana running 180
+wait_container_condition nginx running 180
+wait_container_condition fluent-bit healthy 180
 
 echo ""
-echo "✅ WAF Dual-Track System Started Successfully!"
+echo "✅ WAF runtime stack is ready."
 echo ""
-echo "🌟 System Architecture:"
-echo "  📊 Analytics Track: Kafka → ksqlDB → Elasticsearch/ClickHouse"
-echo "  ⚡ Real-time Track: Redis Streams → Go Processor → InfluxDB"
-echo "  🔍 Threat Detection: ModSecurity → Fluent Bit → Dual Routing"
-echo "  🛡️ WAF Protection: Nginx + OWASP CRS"
+echo "🌟 Runtime flow:"
+echo "  🛡️ ModSecurity → Fluent Bit → Kafka waf-realtime-events"
+echo "  📊 Kafka → ksqlDB / Logstash / ClickHouse consumer"
+echo "  ⚡ Real-time processor → InfluxDB"
 echo ""
 echo "📊 Access Points:"
 echo "   • WAF Dashboard:     http://localhost:3001"
 echo "   • WAF Protection:    http://localhost:8080"
-echo "   • Grafana:           http://localhost:3000 (admin/admin)"
+echo "   • Grafana:           http://localhost:3000"
 echo "   • Kibana:            http://localhost:5601"
 echo "   • Elasticsearch:     http://localhost:9200"
 echo "   • InfluxDB:          http://localhost:8086"
+echo "   • ClickHouse HTTP:   http://localhost:8123"
 echo ""
 echo "🔧 API Endpoints:"
 echo "   • Dashboard API:     http://localhost:8082"
@@ -115,24 +188,11 @@ echo "   • Social Auth API:   http://localhost:8081"
 echo "   • ksqlDB:            http://localhost:8088"
 echo ""
 echo "📋 Service Status:"
-docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | head -20
-echo ""
-echo "📝 Next Steps:"
-echo "   1. Test WAF protection: curl http://localhost:8080"
-echo "   2. Generate attacks: curl \"http://localhost:8080/?id=<script>alert(1)</script>\""
-echo "   3. Access dashboard: http://localhost:3001"
-echo "   4. Monitor real-time: http://localhost:3000"
-echo "   5. Analyze logs: http://localhost:5601"
-echo ""
-echo "🎯 Attack Testing Examples:"
-echo "   • XSS: curl \"http://localhost:8080/search?q=<script>alert('xss')</script>\""
-echo "   • SQLi: curl -d \"user=admin' OR 1=1--\" http://localhost:8080/login"
-echo "   • Scanner: curl -H \"User-Agent: Nikto\" http://localhost:8080"
+docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 echo ""
 echo "💡 Usage Options:"
-echo "   • ./startup.sh              : Start with existing images"
-echo "   • ./startup.sh --build      : Build all services and start"
-echo "   • ./startup.sh -b           : Same as --build"
-echo "   • ./startup.sh --build-backend : Build only backend services"
-echo "   • ./startup.sh --build-frontend: Build only frontend service"
-echo ""
+echo "   • ./startup.sh                    Start with existing images"
+echo "   • ./startup.sh --build            Build all services and start"
+echo "   • ./startup.sh -b                 Same as --build"
+echo "   • ./startup.sh --build-backend    Build only backend services first"
+echo "   • ./startup.sh --build-frontend   Build only frontend service first"

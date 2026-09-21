@@ -167,6 +167,7 @@ services:
       - modsec-logs:/var/log/modsecurity:ro
     environment:
       - LS_JAVA_OPTS=-Xms512m -Xmx512m
+    command: ["logstash", "--path.config", "/usr/share/logstash/pipeline/pipeline.conf"]
 
   # Fluent Bit
   fluent-bit:
@@ -202,6 +203,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD}
       - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
       - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN}
       - DOCKER_INFLUXDB_INIT_RETENTION=7d
     volumes:
       - influxdb-data:/var/lib/influxdb2

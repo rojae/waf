@@ -228,6 +228,7 @@ metadata:
 data:
   public-domain: "${DOMAIN:-http://localhost:3001}"
   cookie-domain: "${COOKIE_DOMAIN:-localhost}"
+  cookie-secure: "${COOKIE_SECURE:-false}"
   google-oauth-redirect-uri: "${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:3001/login/oauth2/code/google}"
   oauth-callback-base-url: "${OAUTH_CALLBACK_BASE_URL:-http://localhost:3001}"
   oauth-default-redirect-url: "${OAUTH_DEFAULT_REDIRECT_URL:-http://localhost:3001}"
