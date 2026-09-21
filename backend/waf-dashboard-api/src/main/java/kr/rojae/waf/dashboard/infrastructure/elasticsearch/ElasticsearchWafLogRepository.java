@@ -31,11 +31,11 @@ public class ElasticsearchWafLogRepository {
             
             // Add filters
             if (severity != null && !severity.isEmpty()) {
-                criteria = criteria.and("severity.keyword").is(severity);
+                criteria = criteria.and("severity").is(severity);
             }
             
             if (attackType != null && !attackType.isEmpty()) {
-                criteria = criteria.and("attack_type.keyword").is(attackType);
+                criteria = criteria.and("attack_type").is(attackType);
             }
             
             if (clientIp != null && !clientIp.isEmpty()) {
