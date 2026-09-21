@@ -1,6 +1,7 @@
 package kr.rojae.waf.social.domain.oauth;
 
 import kr.rojae.waf.common.utils.Randoms;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,7 @@ public class OAuthStateService {
     private final Clock clock;
     private final Map<String, Instant> consumedStates = new ConcurrentHashMap<>();
 
+    @Autowired
     public OAuthStateService(@Value("${app.oauth.state-secret:${app.jwt.secret}}") String secret,
                              @Value("${app.oauth.state-ttl-seconds:300}") long ttlSeconds) {
         this(secret, ttlSeconds, Clock.systemUTC());

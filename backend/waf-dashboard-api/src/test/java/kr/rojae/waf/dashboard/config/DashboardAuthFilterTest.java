@@ -27,6 +27,15 @@ class DashboardAuthFilterTest {
     }
 
     @Test
+    void rejectsMissingTokenForEncodedApiPath() throws ServletException, IOException {
+        DashboardAuthFilter filter = filter();
+
+        MockHttpServletResponse response = run(filter, request("GET", "/%61pi/rules"));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void rejectsCookieBackedUnsafeMutationWithoutAllowedOrigin() throws ServletException, IOException {
         DashboardAuthFilter filter = filter();
         MockHttpServletRequest request = request("POST", "/api/rules");

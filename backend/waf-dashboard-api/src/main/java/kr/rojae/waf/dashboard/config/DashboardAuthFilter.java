@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -41,7 +43,7 @@ public class DashboardAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return "OPTIONS".equalsIgnoreCase(request.getMethod()) || !isApiPath(request.getRequestURI());
+        return "OPTIONS".equalsIgnoreCase(request.getMethod()) || !isApiPath(normalizedPath(request));
     }
 
     @Override
@@ -94,8 +96,17 @@ public class DashboardAuthFilter extends OncePerRequestFilter {
         return origin != null && allowedOrigins.contains(origin);
     }
 
-    private boolean isApiPath(String requestUri) {
-        return requestUri != null && (requestUri.equals("/api") || requestUri.startsWith("/api/") || requestUri.startsWith("/api;"));
+    private String normalizedPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isBlank() && uri.startsWith(contextPath)) {
+            uri = uri.substring(contextPath.length());
+        }
+        return URLDecoder.decode(uri, StandardCharsets.UTF_8);
+    }
+
+    private boolean isApiPath(String path) {
+        return path != null && (path.equals("/api") || path.startsWith("/api/") || path.startsWith("/api;"));
     }
 
     private void writeError(HttpServletResponse response, int status, String error) throws IOException {
