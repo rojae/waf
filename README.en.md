@@ -2,15 +2,15 @@
 
 A Nginx + ModSecurity + OWASP CRS WAF with a Next.js management UI and Kafka-based telemetry. InfluxDB serves metrics, Elasticsearch serves log search, and ClickHouse stores analytics.
 
-[Korean](README.md) · [Reform plan](docs/REFORM-PLAN.md) · [Rule contract](docs/CUSTOM-RULES.md)
+[Korean](README.md) · [Assessment](docs/REFORM-REVIEW.md) · [Reform plan](docs/REFORM-PLAN.md) · [Rule contract](docs/CUSTOM-RULES.md)
 
 This is a development and validation setup. Production security, capacity, latency and availability have not been established.
 
 ## Behavior and boundaries
 
 - Google OAuth with an HttpOnly session cookie and authenticated dashboard APIs.
-- Metrics, logs and alerts with explicit empty and failure states.
-- Persistent custom-rule and IP/CIDR allowlist **drafts**. Saving or enabling a draft does not apply it to the WAF.
+- Metrics, logs and recent alerts with explicit empty and failure states. The unconnected live alert stream returns `501`.
+- Persistent custom-rule and IPv4/CIDR allowlist **drafts**. Saving or enabling a draft does not apply it to the WAF.
 - Deployment returns `501` until actual Nginx validation and reload are connected.
 - Kafka offsets advance after required sink writes. Recovery can replay records; exactly-once delivery is not promised.
 - Compose and local Kubernetes configuration. No Helm chart, production RBAC or deployment operator is included.
@@ -42,7 +42,7 @@ Local defaults: dashboard port 3001, WAF demo port 8080, Grafana port 3000, Kiba
 (cd services/realtime-processor && go test ./...)
 (cd services/alert-processor && go test ./...)
 python3 -m unittest discover -s kafka-clickhouse-consumer/tests
-python3 -m unittest discover -s scripts/tests
+python3 scripts/tests/test-runtime-config.py
 ```
 
 Additional frontend regression commands are in `frontend/package.json`. CI uses no production credentials. Unit and static checks do not prove actual Google login, a live Nginx rule reload, or the complete broker/database path.

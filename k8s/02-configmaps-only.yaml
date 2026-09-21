@@ -23,6 +23,10 @@ data:
         Daemon        off
         Log_Level     info
         Parsers_File  parsers.conf
+        storage.path  /var/lib/fluent-bit/storage
+        storage.sync  normal
+        storage.checksum off
+        storage.backlog.mem_limit 64M
 
         HTTP_Server   On
         HTTP_Listen   0.0.0.0
@@ -37,6 +41,10 @@ data:
         Path              /var/log/modsecurity/*.json
         Tag               waf.modsec
         Parser            json
+        DB                /var/lib/fluent-bit/state/modsec-audit.db
+        DB.Sync           Normal
+        storage.type      filesystem
+        Mem_Buf_Limit     64M
         Refresh_Interval  1
         Read_From_Head    false
         Skip_Long_Lines   On
@@ -50,12 +58,11 @@ data:
         Match             waf.modsec
         Add               processed_timestamp ${HOSTNAME}-${TIMESTAMP}
 
-    # Simple classification - use modify to add individual fields
     [FILTER]
-        Name              modify
+        Name              lua
         Match             waf.modsec
-        Add               track analytics
-        Add               rule_id ""
+        script            /fluent-bit/etc/waf_classifier.lua
+        call              classify_waf_event
 
     # NOTE: GeoIP2 filter disabled due to SIGSEGV issue
     # Alternative: Use Logstash geoip filter for geographical enrichment
@@ -79,7 +86,9 @@ data:
         Brokers     kafka.waf-processing.svc.cluster.local:9092
         Topics      waf-realtime-events
         Format      json
-        Retry_Limit 3
+        Retry_Limit False
+        rdkafka.queue.buffering.max.kbytes 262144
+        storage.total_limit_size 2G
 
   parsers.conf: |
     [PARSER]
@@ -146,7 +155,6 @@ data:
         classification.track = track
         classification.anomaly_score = anomaly_score
         classification.rule_id = rule_id
-        classification.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
         -- Add classification to record
         record.classification = classification
@@ -340,7 +348,12 @@ data:
           >
         >>
       >,
-      track STRING,
+      classification STRUCT<
+        track STRING,
+        anomaly_score INT,
+        rule_id STRING,
+        timestamp STRING
+      >,
       processed_timestamp STRING
     ) WITH (
       KAFKA_TOPIC='waf-realtime-events',
@@ -355,9 +368,9 @@ data:
       transaction->request->method AS method,
       transaction->request->uri AS uri,
       transaction->response->http_code AS status,
-      track
+      classification->track AS track
     FROM MODSEC_RAW
-    WHERE track = 'analytics'
+    WHERE classification->track = 'analytics'
     EMIT CHANGES;
 
     -- 3) Output to analytics topic for Logstash consumption
@@ -379,7 +392,7 @@ data:
     -- 4) Real-time anomaly detection and alerting
 
     -- High frequency attack detection (>50 requests per minute)
-    CREATE STREAM HIGH_FREQUENCY_ATTACKS
+    CREATE TABLE HIGH_FREQUENCY_ATTACKS
     WITH (
       KAFKA_TOPIC='waf-attack-alerts',
       VALUE_FORMAT='JSON'
@@ -399,7 +412,7 @@ data:
     EMIT CHANGES;
 
     -- Block rate spike detection (>30% blocked in 5 minutes)
-    CREATE STREAM BLOCK_RATE_ALERTS
+    CREATE TABLE BLOCK_RATE_ALERTS
     WITH (
       KAFKA_TOPIC='waf-block-alerts',
       VALUE_FORMAT='JSON'
@@ -414,7 +427,7 @@ data:
       'Block rate exceeded 30% threshold' as description
     FROM MODSEC_ANALYTICS
     WINDOW TUMBLING (SIZE 5 MINUTES)
-    GROUP BY WINDOWSTART
+    GROUP BY 'global'
     HAVING (SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) > 30
     EMIT CHANGES;
 
@@ -426,7 +439,7 @@ data:
     EMIT CHANGES;
 
     -- Top attacked URIs (>10 requests per URI in 5 minutes)
-    CREATE STREAM TOP_ATTACKED_URIS
+    CREATE TABLE TOP_ATTACKED_URIS
     WITH (
       KAFKA_TOPIC='waf-uri-alerts',
       VALUE_FORMAT='JSON'
@@ -650,23 +663,10 @@ metadata:
 data:
   pipeline.conf: |
     input {
-      # Direct file input from ModSecurity logs
-      file {
-        path => "/var/log/modsecurity/modsec_audit.json"
-        start_position => "beginning"
-        codec => "json"
-        add_field => {
-          "source" => "modsecurity"
-          "track" => "analytics"
-        }
-      }
-
-      # Keep Kafka input as backup
       kafka {
-        #bootstrap_servers => "kafka:9092"
-        bootstrap_servers => "kafka.waf-processing.svc.cluster.local:9092"
-        topics            => ["waf-logs"]
-        group_id          => "ls-waf-analytics"
+        bootstrap_servers => "${KAFKA_BOOTSTRAP_SERVERS:kafka:9092}"
+        topics            => ["waf-realtime-events"]
+        group_id          => "${LOGSTASH_KAFKA_GROUP:ls-waf-analytics}"
         auto_offset_reset => "earliest"
         codec             => "json"
         decorate_events   => true
@@ -674,123 +674,166 @@ data:
     }
 
     filter {
-      # Process ModSecurity JSON logs directly
-      if [source] == "modsecurity" and [transaction] {
-        mutate {
-          add_tag => [ "modsecurity_direct", "analytics_track" ]
-          # Extract key fields from ModSecurity transaction structure
-          add_field => {
-            "[client][ip]" => "%{[transaction][client_ip]}"
-            "[event][original_timestamp]" => "%{[transaction][time_stamp]}"
-            "[http][request][method]" => "%{[transaction][request][method]}"
-            "[url][path]" => "%{[transaction][request][uri]}"
-            "[http][response][status_code]" => "%{[transaction][response][http_code]}"
-            "[event][category]" => "web"
-            "[event][type]" => "access"
-            "[event][dataset]" => "waf.modsecurity"
-            "[labels][track]" => "analytics"
-          }
+      if [transaction] {
+        ruby {
+          code => '
+            require "digest"
+
+            def normalize_waf_severity(value)
+              severity = value.to_s.strip.upcase
+              case severity
+              when "0", "1", "2", "EMERGENCY", "ALERT", "CRITICAL"
+                "CRITICAL"
+              when "3", "ERROR", "HIGH"
+                "HIGH"
+              when "4", "WARNING", "WARN", "MEDIUM"
+                "MEDIUM"
+              when "5", "NOTICE", "LOW"
+                "LOW"
+              when "6", "7", "INFO", "INFORMATIONAL", "DEBUG"
+                "INFO"
+              else
+                severity.empty? ? "INFO" : severity
+              end
+            end
+
+            tx = event.get("transaction") || {}
+            req = tx["request"] || {}
+            res = tx["response"] || {}
+            headers = req["headers"] || {}
+            messages = tx["messages"].is_a?(Array) ? tx["messages"] : []
+            first_details = {}
+            first_message = ""
+            rule_ids = []
+            severities = []
+            tags = []
+
+            messages.each do |msg|
+              next unless msg.is_a?(Hash)
+              details = msg["details"].is_a?(Hash) ? msg["details"] : {}
+              first_details = details if first_details.empty?
+              first_message = msg["message"].to_s if first_message.empty? && msg["message"]
+              rule_ids << details["ruleId"].to_s if details["ruleId"]
+              severities << details["severity"].to_s if details["severity"]
+              if details["tags"].is_a?(Array)
+                tags.concat(details["tags"].map(&:to_s))
+              end
+            end
+
+            rule_id = event.get("[classification][rule_id]").to_s
+            rule_id = rule_ids.first.to_s if rule_id.empty?
+            severity = normalize_waf_severity(severities.first)
+            message = first_details["msg"].to_s
+            message = first_details["message"].to_s if message.empty?
+            message = first_message if message.empty?
+
+            attack_type = "Other"
+            rule_ids_for_type = ([rule_id] + rule_ids).reject(&:empty?)
+            rule_ids_for_type.each do |rid|
+              case rid
+              when /^942/
+                attack_type = "SQL Injection"
+                break
+              when /^941/
+                attack_type = "XSS"
+                break
+              when /^932/
+                attack_type = "RCE"
+                break
+              when /^930/
+                attack_type = "Path Traversal"
+                break
+              when /^913/
+                attack_type = "Scanner"
+                break
+              when /^920/
+                attack_type = "Protocol"
+                break
+              end
+            end
+
+            intervention = tx["intervention"].is_a?(Hash) ? tx["intervention"] : {}
+            status_code = res["http_code"].to_i
+            action = intervention["action"].to_s.downcase
+            blocked = intervention["disruptive"] == true || ["deny", "drop", "block"].include?(action) || intervention["status"].to_i == 403 || status_code == 403
+
+            tx_id = tx["id"].to_s
+            tx_id = tx["unique_id"].to_s if tx_id.empty?
+            if tx_id.empty?
+              topic = event.get("[@metadata][kafka][topic]")
+              partition = event.get("[@metadata][kafka][partition]")
+              offset = event.get("[@metadata][kafka][offset]")
+              if topic && partition && offset
+                tx_id = "kafka-#{topic}-#{partition}-#{offset}"
+              else
+                tx_id = "raw-#{Digest::SHA256.hexdigest(tx.to_s)[0, 24]}"
+              end
+            end
+
+            event.set("tx_id", tx_id)
+            event.set("client_ip", tx["client_ip"])
+            event.set("method", req["method"])
+            event.set("uri", req["uri"])
+            event.set("status_code", status_code)
+            event.set("rule_id", rule_id)
+            event.set("severity", severity)
+            event.set("attack_type", attack_type)
+            event.set("message", message)
+            event.set("blocked", blocked)
+            event.set("user_agent", headers["User-Agent"])
+            event.set("timestamp", tx["time_stamp"])
+            event.set("classification_track", event.get("[classification][track]") || event.get("track") || "raw")
+            event.set("rule_ids", rule_ids)
+            event.set("tags", tags)
+          '
         }
 
-        # Parse ModSecurity timestamp
         date {
-          match => ["[transaction][time_stamp]", "EEE MMM dd HH:mm:ss yyyy", "EEE MMM  d HH:mm:ss yyyy"]
+          match => ["timestamp", "EEE MMM dd HH:mm:ss yyyy", "EEE MMM  d HH:mm:ss yyyy", "dd/MMM/yyyy:HH:mm:ss Z", "ISO8601"]
           target => "@timestamp"
           timezone => "UTC"
         }
 
-        # Extract attack information from messages
-        if [transaction][messages] {
+        if [client_ip] and [client_ip] !~ /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/ {
+          geoip {
+            source => "client_ip"
+            target => "geo"
+          }
           ruby {
             code => '
-              messages = event.get("[transaction][messages]")
-              if messages && messages.is_a?(Array) && !messages.empty?
-                # Extract rule IDs and severity
-                rule_ids = messages.map { |msg| msg.dig("details", "ruleId") }.compact
-                severities = messages.map { |msg| msg.dig("details", "severity") }.compact.map(&:to_i)
-
-                event.set("[modsecurity][rules]", rule_ids)
-                event.set("[modsecurity][max_severity]", severities.max || 0) if !severities.empty?
-                event.set("[modsecurity][rule_count]", rule_ids.length)
-
-                # Classify attack type based on rule IDs
-                attack_type = "other"
-                rule_ids.each do |rule_id|
-                  case rule_id.to_s
-                  when /^94[0-9]/  # XSS rules
-                    attack_type = "xss"
-                    break
-                  when /^94[12]/  # SQL injection rules
-                    attack_type = "sqli"
-                    break
-                  when /^93[0-9]/  # LFI/Path traversal
-                    attack_type = "lfi"
-                    break
-                  when /^913/     # Scanner detection
-                    attack_type = "scanner"
-                    break
-                  when /^932/     # RCE
-                    attack_type = "rce"
-                    break
-                  end
-                end
-                event.set("[modsecurity][attack_type]", attack_type)
-              end
+              country = event.get("[geo][country_iso_code]")
+              event.set("country", country) if country && !country.to_s.empty?
             '
           }
         }
 
-        # GeoIP enrichment for client IP
-        if [client][ip] and [client][ip] !~ /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/ {
-          geoip {
-            source => "[client][ip]"
-            target => "[client][geo]"
+        ruby {
+          code => '
+            ts = event.get("@timestamp")
+            event.set("timestamp", ts.time.utc.strftime("%Y-%m-%dT%H:%M:%S.%3NZ")) if ts
+          '
+        }
+
+        mutate {
+          convert => {
+            "status_code" => "integer"
+            "blocked" => "boolean"
           }
+          remove_field => ["@version", "event", "host", "log", "transaction", "classification", "geo"]
         }
-
-        # Clean up original transaction field to reduce storage
-        mutate {
-          remove_field => ["transaction"]
-        }
-      }
-
-      # Process ksqlDB/Kafka input format (legacy)
-      if [@metadata][kafka][topic] == "waf-logs" {
-        mutate {
-          add_tag => [ "kafka_input", "analytics_track" ]
-          rename => { "CLIENT_IP" => "[client][ip]" }
-          rename => { "TS" => "[event][original_timestamp]" }
-          rename => { "METHOD" => "[http][request][method]" }
-          rename => { "URI" => "[url][path]" }
-          rename => { "STATUS" => "[http][response][status_code]" }
-          rename => { "CLASSIFICATION_TRACK" => "[labels][track]" }
-        }
-      }
-
-      # Common cleanup
-      mutate {
-        remove_field => ["@version", "source", "host"]
       }
     }
 
     output {
-      # All analytics data to Elasticsearch
-      if "analytics_track" in [tags] {
-        elasticsearch {
-          #hosts => ["http://waf-es:9200"]
-          hosts => ["http://elasticsearch.waf-data.svc.cluster.local:9200"]
-          index => "waf-logs-%{+YYYY.MM.dd}"
-          ilm_enabled => false
-        }
-      }
-
-      # Debug output to see what's being processed
-      if "modsecurity_direct" in [tags] {
-        stdout {
-          codec => rubydebug {
-            metadata => false
-          }
-        }
+      elasticsearch {
+        hosts              => ["${ELASTICSEARCH_HOSTS:http://waf-es:9200}"]
+        index              => "waf-logs-%{+YYYY.MM.dd}"
+        document_id        => "%{tx_id}"
+        ilm_enabled        => false
+        template           => "/usr/share/logstash/pipeline/waf-logs-template.json"
+        template_api       => "composable"
+        template_name      => "waf-logs-template"
+        template_overwrite => true
       }
     }
   waf-logs-template.json: |
@@ -860,6 +903,26 @@ data:
     ORDER BY (timestamp, client_ip, rule_id)
     TTL timestamp + INTERVAL 1 YEAR
     SETTINGS index_granularity = 8192;
+
+    -- Additive compatibility columns for the Kafka -> ClickHouse consumer.
+    -- These ALTERs are intentionally non-destructive so existing deployments can
+    -- retain data while accepting the enriched insert shape.
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS country_name String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS latitude Float64 DEFAULT 0;
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS longitude Float64 DEFAULT 0;
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS referer String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS accept_language String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS attack_type String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS attack_category String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS severity_level String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS browser String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS browser_version String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS os String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS os_version String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS device String DEFAULT '';
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_bot Bool DEFAULT false;
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_mobile Bool DEFAULT false;
+    ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_tablet Bool DEFAULT false;
 
     -- IP별 공격 패턴 집계 테이블
     CREATE TABLE IF NOT EXISTS waf_analytics.ip_attack_summary (

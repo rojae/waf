@@ -77,7 +77,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m unittest discover -s kafka-clickhouse-consumer/tests
-      - run: python3 -m unittest discover -s scripts/tests
+      - name: Verify generated Kubernetes configuration matches source
+        run: |
+          bash scripts/generate-k8s-configmaps.sh
+          git diff --exit-code -- k8s/02-configmaps-only.yaml
+      - run: python3 scripts/tests/test-runtime-config.py
       - run: docker compose --env-file .env.example config --quiet
       - name: Check shell syntax
         run: git ls-files -z '*.sh' | xargs -0 -n 1 bash -n

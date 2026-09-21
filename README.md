@@ -2,14 +2,14 @@
 
 Nginx + ModSecurity + OWASP CRS 기반 WAF와 Next.js 관리 화면입니다. Kafka로 감사 로그를 수집하고 InfluxDB·Elasticsearch·ClickHouse에서 조회·분석합니다.
 
-[English](README.en.md) · [개편 계획](docs/REFORM-PLAN.md) · [규칙 관리 계약](docs/CUSTOM-RULES.md)
+[English](README.en.md) · [개편 판단](docs/REFORM-REVIEW.md) · [개편 계획](docs/REFORM-PLAN.md) · [규칙 관리 계약](docs/CUSTOM-RULES.md)
 
 현재는 개발·검증용 구성입니다. 운영 보안, 처리량, 지연 시간, 고가용성을 검증한 배포 구성이 아닙니다.
 
 ## 현재 기능과 경계
 
 - Google OAuth 로그인과 HttpOnly 세션 쿠키, 인증이 필요한 dashboard API.
-- 요청 통계, 로그 검색, 실시간 로그와 경고 조회. 빈 데이터와 조회 실패를 구분합니다.
+- 요청 통계, 로그 검색, 실시간 로그와 최근 경고 조회. 빈 데이터와 조회 실패를 구분합니다. 실시간 경고 스트림은 아직 연결되지 않아 `501`을 반환합니다.
 - 사용자 규칙과 IP/CIDR 화이트리스트 **초안** CRUD 및 파일 저장.
 - 규칙 적용 API는 실제 Nginx 검증·reload 경로가 연결되기 전까지 `501`을 반환합니다. 저장과 활성 적용은 별개입니다.
 - Kafka 소비자는 필수 저장이 성공한 뒤 커밋합니다. 장애 후 재처리로 중복이 발생할 수 있습니다.
@@ -71,7 +71,7 @@ Nginx 기본 대상은 정적 데모 페이지입니다. 실제 애플리케이�
 (cd services/realtime-processor && go test ./...)
 (cd services/alert-processor && go test ./...)
 python3 -m unittest discover -s kafka-clickhouse-consumer/tests
-python3 -m unittest discover -s scripts/tests
+python3 scripts/tests/test-runtime-config.py
 ```
 
 프런트엔드 추가 회귀 테스트 명령은 `frontend/package.json`을 따릅니다. CI는 운영 자격 증명 없이 실행합니다. 단위·정적 검증만으로 실제 Google 로그인이나 전체 WAF → Kafka → 저장소 연결을 보장하지 않습니다.
