@@ -44,7 +44,7 @@ function forwardedHeaders(request: NextRequest, stream = false) {
   if (cookie) headers.set('Cookie', cookie)
   if (contentType) headers.set('Content-Type', contentType)
   if (origin) headers.set('Origin', origin)
-  headers.set('Accept', stream ? 'text/event-stream' : request.headers.get('accept') || 'application/json')
+  headers.set('Accept', stream ? 'text/event-stream, application/json' : request.headers.get('accept') || 'application/json')
   if (stream) headers.set('Cache-Control', 'no-cache')
 
   return headers

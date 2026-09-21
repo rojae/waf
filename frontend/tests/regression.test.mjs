@@ -182,7 +182,7 @@ test('realtime log connection attaches handlers for EventSource events and uses 
   assert.deepEqual(errors, [1])
 })
 
-test('SSE proxy forwards auth cookies and preserves upstream 401', async () => {
+test('SSE proxy forwards auth cookies and negotiates JSON error responses', async () => {
   const calls = []
   const { proxyEventStream } = loadTsModule('src/lib/server/proxy.ts', {
     'next/server': { NextResponse: MockNextResponse },
@@ -190,20 +190,22 @@ test('SSE proxy forwards auth cookies and preserves upstream 401', async () => {
   })
   globalThis.fetch = async (url, init) => {
     calls.push({ url: url.toString(), init })
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401,
+    return new Response(JSON.stringify({ error: 'alert_stream_unavailable' }), {
+      status: 501,
       headers: { 'Content-Type': 'application/json' },
     })
   }
 
   const response = await proxyEventStream(
-    request('http://app.local/api/realtime/logs/stream', { cookie: 'WAF_AT=token' }),
+    request('http://app.local/api/alerts/stream', { cookie: 'WAF_AT=token' }),
     'dashboard',
-    '/api/realtime/logs/stream',
+    '/api/alerts/stream',
   )
 
-  assert.equal(response.status, 401)
+  assert.equal(response.status, 501)
+  assert.equal(await response.json().then(body => body.error), 'alert_stream_unavailable')
   assert.equal(calls[0].init.headers.get('Cookie'), 'WAF_AT=token')
+  assert.equal(calls[0].init.headers.get('Accept'), 'text/event-stream, application/json')
 })
 
 test('alerts stream route uses the shared authenticated SSE proxy', () => {
