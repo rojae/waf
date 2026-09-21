@@ -12,6 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/dashboard")
 @RequiredArgsConstructor
@@ -22,14 +24,15 @@ public class DashboardController {
     private final ElasticsearchWafLogRepository logRepository;
 
     @GetMapping("/metrics")
-    public ResponseEntity<MetricsDto> getMetrics() {
+    public ResponseEntity<?> getMetrics() {
         log.info("GET /api/dashboard/metrics");
         
         try {
             MetricsDto metrics = metricsRepository.getMetrics();
             return ResponseEntity.ok(metrics);
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "metrics_sink_unavailable"));
         }
     }
     
@@ -65,7 +68,7 @@ public class DashboardController {
     }
 
     @GetMapping("/logs")
-    public ResponseEntity<Page<WafLogDto>> getLogs(
+    public ResponseEntity<?> getLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String severity,
@@ -80,7 +83,8 @@ public class DashboardController {
             Page<WafLogDto> logs = logRepository.findWafLogs(pageRequest, severity, attackType, clientIp);
             return ResponseEntity.ok(logs);
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "log_sink_unavailable"));
         }
     }
 }
