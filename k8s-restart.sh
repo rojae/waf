@@ -114,11 +114,12 @@ print_step "Updating ConfigMaps..."
 
 # Create temporary file with substituted values
 TEMP_CONFIG="/tmp/k8s-configmaps-secrets-applied.yaml"
+CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET}'
 
-# Export all environment variables and substitute (using ConfigMaps-only file)
-envsubst < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
+./scripts/generate-k8s-configmaps.sh
+envsubst "$CONFIG_ENVSUBST_VARS" < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
 
-# Apply only ConfigMaps
+# Apply generated ConfigMaps and Secrets
 kubectl apply -f "$TEMP_CONFIG"
 
 # Clean up

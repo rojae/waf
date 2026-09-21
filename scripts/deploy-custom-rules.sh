@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# WAF Custom Rules Deployment Script
-# This script deploys or updates custom ModSecurity rules
+# WAF Custom Rules Draft Script
+# PR1 stores draft ModSecurity rules only. It does not apply them to nginx.
 
 set -e
 
@@ -15,7 +15,6 @@ NC='\033[0m' # No Color
 # Configuration
 NAMESPACE="waf-system"
 CONFIGMAP_NAME="modsecurity-custom-rules"
-DEPLOYMENT_NAME="nginx-waf-with-custom-rules"
 TIMEOUT="300s"
 
 # Default rules file
@@ -30,7 +29,10 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Deploy or manage WAF custom rules
+Store or manage draft WAF custom rules.
+
+This PR1 script updates the draft ConfigMap only. It does not validate with the
+runtime nginx/modsecurity image, reload nginx, or claim active WAF deployment.
 
 OPTIONS:
     -f, --file FILE         Rules file to deploy
@@ -42,8 +44,8 @@ OPTIONS:
     -h, --help             Show this help message
 
 EXAMPLES:
-    $0 -f rules/custom-rules.conf              # Deploy rules from file
-    $0 --dry-run -f rules/custom-rules.conf    # Preview deployment
+    $0 -f rules/custom-rules.conf              # Store draft rules from file
+    $0 --dry-run -f rules/custom-rules.conf    # Preview draft update
     $0 --rollback backup-20240124-120000       # Rollback to backup
     $0 --list-backups                          # List available backups
 
@@ -92,7 +94,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo -e "${BLUE}===========================================${NC}"
-echo -e "${BLUE}WAF Custom Rules Deployment${NC}"
+echo -e "${BLUE}WAF Custom Rules Draft Update${NC}"
 echo -e "${BLUE}===========================================${NC}"
 
 # Validate prerequisites
@@ -125,7 +127,7 @@ if [ "$ROLLBACK" = true ]; then
     fi
 
     if [ "$DRY_RUN" = true ]; then
-        echo -e "${YELLOW}[DRY RUN] Would rollback to backup: $BACKUP_NAME${NC}"
+    echo -e "${YELLOW}[DRY RUN] Would restore draft from backup: $BACKUP_NAME${NC}"
         kubectl get configmap "$BACKUP_NAME" -n "$NAMESPACE" -o yaml
         exit 0
     fi
@@ -197,10 +199,9 @@ if [ "$BACKUP" = true ] && [ "$ROLLBACK" = false ]; then
 fi
 
 # Show deployment preview
-echo -e "${YELLOW}Deployment preview:${NC}"
+echo -e "${YELLOW}Draft update preview:${NC}"
 echo "  Namespace: $NAMESPACE"
 echo "  ConfigMap: $CONFIGMAP_NAME"
-echo "  Deployment: $DEPLOYMENT_NAME"
 echo "  Rules file: $RULES_FILE"
 echo "  Rule count: $RULE_COUNT"
 
@@ -214,8 +215,8 @@ if [ "$DRY_RUN" = true ]; then
     exit 0
 fi
 
-# Deploy rules
-echo -e "${YELLOW}Deploying custom rules...${NC}"
+# Store draft rules
+echo -e "${YELLOW}Storing draft custom rules...${NC}"
 
 # Read rules content
 RULES_CONTENT=$(<"$RULES_FILE")
@@ -230,52 +231,25 @@ kubectl label --local -f - \
     managed-by=waf-dashboard \
     -o yaml | \
 kubectl annotate --local -f - \
-    "waf.rojae.kr/deployment-id=manual-$(date +%s)" \
+    "waf.rojae.kr/draft-id=manual-$(date +%s)" \
     "waf.rojae.kr/updated-at=$(date -Iseconds)" \
     "waf.rojae.kr/rules-count=$RULE_COUNT" \
+    "waf.rojae.kr/applied=false" \
     -o yaml | \
 kubectl apply -f -
 
-echo -e "${GREEN}✓ ConfigMap updated${NC}"
+echo -e "${GREEN}✓ Draft ConfigMap updated${NC}"
+echo -e "${YELLOW}⚠ Draft was not applied to nginx; runtime validation/reload is not implemented in PR1.${NC}"
 
-# Trigger rolling update if deployment exists
-if kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" &> /dev/null; then
-    echo -e "${YELLOW}Triggering rolling update...${NC}"
-
-    # Add annotation to trigger rollout
-    kubectl annotate deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" \
-        "waf.rojae.kr/rules-updated=$(date -Iseconds)" \
-        "waf.rojae.kr/last-rollout=$(date +%s)" --overwrite
-
-    echo -e "${YELLOW}Waiting for rollout to complete...${NC}"
-    kubectl rollout status deployment/"$DEPLOYMENT_NAME" -n "$NAMESPACE" --timeout="$TIMEOUT"
-
-    echo -e "${GREEN}✓ Rolling update completed${NC}"
-else
-    echo -e "${YELLOW}⚠ Deployment $DEPLOYMENT_NAME not found, rules updated in ConfigMap only${NC}"
-fi
-
-# Verify deployment
-echo -e "${YELLOW}Verifying deployment...${NC}"
+# Verify draft storage
+echo -e "${YELLOW}Verifying draft storage...${NC}"
 
 # Check ConfigMap content
 DEPLOYED_RULE_COUNT=$(kubectl get configmap "$CONFIGMAP_NAME" -n "$NAMESPACE" -o jsonpath='{.data.custom-rules\.conf}' | grep -c "SecRule" || echo 0)
 if [ "$DEPLOYED_RULE_COUNT" -eq "$RULE_COUNT" ]; then
-    echo -e "${GREEN}✓ Rule count matches: $DEPLOYED_RULE_COUNT${NC}"
+    echo -e "${GREEN}✓ Draft rule count matches: $DEPLOYED_RULE_COUNT${NC}"
 else
-    echo -e "${YELLOW}⚠ Rule count mismatch: deployed=$DEPLOYED_RULE_COUNT, expected=$RULE_COUNT${NC}"
-fi
-
-# Check deployment status
-if kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" &> /dev/null; then
-    READY_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.status.readyReplicas}')
-    DESIRED_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.replicas}')
-
-    if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ]; then
-        echo -e "${GREEN}✓ All $READY_REPLICAS replicas are ready${NC}"
-    else
-        echo -e "${YELLOW}⚠ Only $READY_REPLICAS out of $DESIRED_REPLICAS replicas are ready${NC}"
-    fi
+    echo -e "${YELLOW}⚠ Draft rule count mismatch: stored=$DEPLOYED_RULE_COUNT, expected=$RULE_COUNT${NC}"
 fi
 
 # Cleanup temporary file if created during rollback
@@ -285,25 +259,24 @@ fi
 
 # Display deployment summary
 echo -e "${BLUE}===========================================${NC}"
-echo -e "${BLUE}Deployment Summary${NC}"
+echo -e "${BLUE}Draft Update Summary${NC}"
 echo -e "${BLUE}===========================================${NC}"
 
-echo -e "${GREEN}✓ Custom rules deployment completed${NC}"
+echo -e "${GREEN}✓ Custom rules draft stored${NC}"
 echo
-echo -e "${YELLOW}Deployment details:${NC}"
-echo "  • Rules deployed: $RULE_COUNT"
+echo -e "${YELLOW}Draft details:${NC}"
+echo "  • Rules stored: $RULE_COUNT"
 echo "  • ConfigMap: $CONFIGMAP_NAME"
 echo "  • Namespace: $NAMESPACE"
+echo "  • Applied to nginx: no"
 if [ "$BACKUP" = true ] && [ "$ROLLBACK" = false ]; then
     echo "  • Backup created: $BACKUP_CONFIGMAP"
 fi
 echo
 echo -e "${YELLOW}Useful commands:${NC}"
 echo "  • View rules: kubectl get configmap $CONFIGMAP_NAME -n $NAMESPACE -o yaml"
-echo "  • Check deployment: kubectl get deployment $DEPLOYMENT_NAME -n $NAMESPACE"
-echo "  • View logs: kubectl logs -l app=nginx-waf -n $NAMESPACE"
 echo "  • List backups: $0 --list-backups"
 
 echo -e "${BLUE}===========================================${NC}"
-echo -e "${GREEN}Deployment completed successfully!${NC}"
+echo -e "${GREEN}Draft update completed successfully!${NC}"
 echo -e "${BLUE}===========================================${NC}"

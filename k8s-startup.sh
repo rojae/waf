@@ -142,7 +142,7 @@ IMAGES=(
     "waf-dashboard-api:latest"
     "waf-social-api:latest"
     "waf-frontend:latest"
-    "nginx-waf:latest"
+    "waf-nginx:latest"
 )
 
 MISSING_IMAGES=()
@@ -165,19 +165,19 @@ if [ ${#MISSING_IMAGES[@]} -ne 0 ]; then
 
         # Build backend services
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-dashboard-api:latest " ]]; then
-            docker build -t waf-dashboard-api:latest -f backend/waf-dashboard-api/Dockerfile backend/waf-dashboard-api
+            docker build -t waf-dashboard-api:latest -f backend/Dockerfile --target dashboard-api backend
         fi
 
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-social-api:latest " ]]; then
-            docker build -t waf-social-api:latest -f backend/waf-social-api/Dockerfile backend/waf-social-api
+            docker build -t waf-social-api:latest -f backend/Dockerfile --target social-api backend
         fi
 
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-frontend:latest " ]]; then
             docker build -t waf-frontend:latest -f frontend/Dockerfile.dev frontend
         fi
 
-        if [[ " ${MISSING_IMAGES[@]} " =~ " nginx-waf:latest " ]]; then
-            docker build -t nginx-waf:latest -f nginx/Dockerfile nginx
+        if [[ " ${MISSING_IMAGES[@]} " =~ " waf-nginx:latest " ]]; then
+            docker build -t waf-nginx:latest -f nginx/Dockerfile nginx
         fi
 
         print_success "Docker images built successfully"
@@ -272,8 +272,10 @@ print_step "Creating ConfigMaps with environment variables..."
 # Create temporary file with substituted values
 TEMP_CONFIG="/tmp/k8s-configmaps-secrets-applied.yaml"
 
-# Export all environment variables and substitute (using ConfigMaps-only file)
-envsubst < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
+# Substitute only deploy-time placeholders; leave embedded runtime/script
+# variables such as ${HOSTNAME}, $BROKER, and Ruby/Logstash expressions intact.
+ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET}'
+envsubst "$ENVSUBST_VARS" < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
 
 # Apply only ConfigMaps
 kubectl apply -f "$TEMP_CONFIG"
@@ -295,14 +297,14 @@ kubectl apply -f k8s/04-data-stores.yaml
 print_success "Data stores deployed"
 
 print_step "Waiting for data stores to be ready..."
-kubectl wait --for=condition=ready pod -l app=elasticsearch -n waf-data --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=influxdb -n waf-data --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=elasticsearch -n waf-data --timeout=300s
+kubectl wait --for=condition=ready pod -l app=influxdb -n waf-data --timeout=300s
 
 kubectl apply -f k8s/05-processing-services.yaml
 print_success "Processing services deployed"
 
 print_step "Waiting for Kafka to be ready..."
-kubectl wait --for=condition=ready pod -l app=kafka -n waf-processing --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=kafka -n waf-processing --timeout=300s
 
 kubectl apply -f k8s/03-nginx-waf.yaml
 print_success "NGINX WAF deployed"
@@ -317,11 +319,12 @@ print_step "Waiting for all pods to be ready..."
 
 # Wait for critical pods
 echo "Waiting for waf-system pods..."
-kubectl wait --for=condition=ready pod -l app=waf-frontend -n waf-system --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=waf-social-api -n waf-system --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=waf-dashboard-api -n waf-system --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=nginx-waf -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-frontend -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-social-api -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-dashboard-api -n waf-system --timeout=300s
 
-print_success "All pods are ready"
+print_success "Required waf-system pods are ready"
 
 # =============================================
 # Step 9: Display deployment status

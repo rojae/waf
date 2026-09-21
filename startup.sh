@@ -52,15 +52,15 @@ if [ "$1" = "--build" ] || [ "$1" = "-b" ]; then
     BUILD_OPTION="--build"
 elif [ "$1" = "--build-backend" ]; then
     echo "🔨 Building backend services only..."
-    docker-compose build waf-dashboard-api waf-social-api
+    docker compose build waf-dashboard-api waf-social-api
 elif [ "$1" = "--build-frontend" ]; then
     echo "🔨 Building frontend only..."
-    docker-compose build waf-frontend
+    docker compose build waf-frontend
 fi
 
 # 단계적 서비스 시작
 echo "🚀 Phase 1: Starting core infrastructure (Storage & Message Queue)..."
-docker-compose up $BUILD_OPTION -d kafka elasticsearch influxdb clickhouse
+docker compose up $BUILD_OPTION -d kafka elasticsearch influxdb clickhouse
 
 echo "✅ Kafka topic ensure check..."
 sh ./kafka/ensure-topics.sh
@@ -69,25 +69,25 @@ echo "⏳ Waiting for core services to initialize..."
 sleep 30
 
 echo "🚀 Phase 2: Starting stream processing..."
-docker-compose up $BUILD_OPTION -d ksqldb logstash
+docker compose up $BUILD_OPTION -d ksqldb logstash
 
 echo "⏳ Waiting for stream processors..."
 sleep 20
 
 echo "🚀 Phase 3: Starting WAF applications..."
-docker-compose up $BUILD_OPTION -d waf-dashboard-api waf-social-api
+docker compose up $BUILD_OPTION -d waf-dashboard-api waf-social-api
 
 echo "⏳ Waiting for backend APIs..."
 sleep 15
 
 echo "🚀 Phase 4: Starting frontend and processors..."
-docker-compose up $BUILD_OPTION -d waf-frontend realtime-processor alert-processor
+docker compose up $BUILD_OPTION -d waf-frontend realtime-processor alert-processor
 
 echo "⏳ Waiting for frontend to start..."
 sleep 10
 
 echo "🚀 Phase 5: Starting monitoring and WAF core..."
-docker-compose up $BUILD_OPTION -d grafana kibana nginx fluent-bit
+docker compose up $BUILD_OPTION -d grafana kibana nginx fluent-bit
 
 echo "⏳ Final initialization..."
 sleep 15
@@ -115,7 +115,7 @@ echo "   • Social Auth API:   http://localhost:8081"
 echo "   • ksqlDB:            http://localhost:8088"
 echo ""
 echo "📋 Service Status:"
-docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | head -20
+docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | head -20
 echo ""
 echo "📝 Next Steps:"
 echo "   1. Test WAF protection: curl http://localhost:8080"

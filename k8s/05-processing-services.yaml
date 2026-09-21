@@ -364,8 +364,8 @@ spec:
           value: "http://influxdb.waf-data.svc.cluster.local:8086"
         - name: INFLUXDB_TOKEN
           valueFrom:
-            configMapKeyRef:
-              name: influxdb-config
+            secretKeyRef:
+              name: waf-influxdb-secrets
               key: influxdb-token
         - name: INFLUXDB_ORG
           valueFrom:

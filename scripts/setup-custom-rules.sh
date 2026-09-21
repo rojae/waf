@@ -51,29 +51,11 @@ echo -e "${YELLOW}Applying base ModSecurity configuration...${NC}"
 kubectl apply -f k8s/09-modsecurity-base-config.yaml
 echo -e "${GREEN}✓ Base ModSecurity configuration applied${NC}"
 
-# Apply custom rules ConfigMap and deployment
-echo -e "${YELLOW}Setting up custom rules system...${NC}"
+# Apply draft custom rules ConfigMap
+echo -e "${YELLOW}Setting up draft custom rules store...${NC}"
 kubectl apply -f k8s/08-custom-rules-configmap.yaml
-echo -e "${GREEN}✓ Custom rules ConfigMap and deployment configuration applied${NC}"
-
-# Apply monitoring and health checks
-echo -e "${YELLOW}Setting up monitoring and health checks...${NC}"
-kubectl apply -f k8s/10-custom-rules-deployment-monitoring.yaml
-echo -e "${GREEN}✓ Monitoring and health check configuration applied${NC}"
-
-# Wait for deployments to be ready
-echo -e "${YELLOW}Waiting for deployments to be ready...${NC}"
-
-# Check if nginx-waf-with-custom-rules deployment exists
-if kubectl get deployment nginx-waf-with-custom-rules -n "$NAMESPACE" &> /dev/null; then
-    echo -e "${YELLOW}Waiting for nginx-waf-with-custom-rules deployment to be ready...${NC}"
-    kubectl wait --for=condition=available --timeout="$TIMEOUT" deployment/nginx-waf-with-custom-rules -n "$NAMESPACE" || {
-        echo -e "${YELLOW}⚠ nginx-waf-with-custom-rules deployment may still be starting up${NC}"
-    }
-    echo -e "${GREEN}✓ Nginx WAF deployment is ready${NC}"
-else
-    echo -e "${YELLOW}⚠ nginx-waf-with-custom-rules deployment not found - may need to be created separately${NC}"
-fi
+echo -e "${GREEN}✓ Draft custom rules ConfigMap applied${NC}"
+echo -e "${YELLOW}⚠ PR1 does not apply draft rules to nginx. Runtime validation and reload are follow-up work.${NC}"
 
 # Verify ConfigMaps
 echo -e "${YELLOW}Verifying ConfigMaps...${NC}"
@@ -81,7 +63,6 @@ echo -e "${YELLOW}Verifying ConfigMaps...${NC}"
 CONFIGMAPS=(
     "modsecurity-base-config"
     "modsecurity-custom-rules"
-    "waf-monitoring-config"
 )
 
 for cm in "${CONFIGMAPS[@]}"; do
@@ -106,18 +87,6 @@ else
     echo -e "${YELLOW}⚠ RBAC role binding not found${NC}"
 fi
 
-# Test health check
-echo -e "${YELLOW}Running health check...${NC}"
-if kubectl get configmap waf-monitoring-config -n "$NAMESPACE" &> /dev/null; then
-    # Create a test pod to run the health check
-    kubectl run waf-health-test --rm -i --restart=Never --image=bitnami/kubectl:latest -n "$NAMESPACE" -- \
-        bash -c "$(kubectl get configmap waf-monitoring-config -n "$NAMESPACE" -o jsonpath='{.data.health-check\.sh}')" || {
-        echo -e "${YELLOW}⚠ Health check completed with warnings${NC}"
-    }
-else
-    echo -e "${YELLOW}⚠ Health check script not available${NC}"
-fi
-
 # Display setup summary
 echo -e "${BLUE}===========================================${NC}"
 echo -e "${BLUE}Setup Summary${NC}"
@@ -127,22 +96,18 @@ echo -e "${GREEN}✓ Custom Rules Management System Setup Complete${NC}"
 echo
 echo -e "${YELLOW}Components installed:${NC}"
 echo "  • Base ModSecurity configuration"
-echo "  • Custom rules ConfigMap management"
-echo "  • Nginx WAF deployment with custom rules support"
-echo "  • Health monitoring and alerting"
+echo "  • Draft custom rules ConfigMap management"
 echo "  • RBAC for secure configuration management"
 echo
 echo -e "${YELLOW}Next steps:${NC}"
-echo "  1. Deploy your WAF Dashboard API to manage custom rules"
-echo "  2. Access the web interface to create and manage custom rules"
-echo "  3. Monitor rule deployments through the health check system"
+echo "  1. Deploy your WAF Dashboard API to manage draft custom rules"
+echo "  2. Access the web interface to create and manage draft rules"
+echo "  3. Implement runtime validation/reload before claiming active WAF deployment"
 echo
 echo -e "${YELLOW}Useful commands:${NC}"
 echo "  • Check custom rules: kubectl get configmap modsecurity-custom-rules -n $NAMESPACE -o yaml"
-echo "  • View deployment status: kubectl get deployment nginx-waf-with-custom-rules -n $NAMESPACE"
 echo "  • Check logs: kubectl logs -l app=nginx-waf -n $NAMESPACE"
-echo "  • Run health check: kubectl logs -l component=health-check-job -n $NAMESPACE"
 
 echo -e "${BLUE}===========================================${NC}"
-echo -e "${GREEN}Setup completed successfully!${NC}"
+echo -e "${GREEN}Draft setup completed successfully!${NC}"
 echo -e "${BLUE}===========================================${NC}"

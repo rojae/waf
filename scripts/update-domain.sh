@@ -45,17 +45,8 @@ else
     echo -e "${RED}   ✗ .env file not found${NC}"
 fi
 
-# Update backend application.yml default values
-echo -e "${YELLOW}📝 Updating backend application.yml...${NC}"
-BACKEND_CONFIG="$PROJECT_ROOT/backend/waf-social-api/src/main/resources/application.yml"
-if [ -f "$BACKEND_CONFIG" ]; then
-    sed -i.bak "s|callback-base-url: \${OAUTH_CALLBACK_BASE_URL:.*}|callback-base-url: \${OAUTH_CALLBACK_BASE_URL:$NEW_DOMAIN}|g" "$BACKEND_CONFIG"
-    sed -i.bak "s|default-redirect-url: \${OAUTH_DEFAULT_REDIRECT_URL:.*}|default-redirect-url: \${OAUTH_DEFAULT_REDIRECT_URL:$NEW_DOMAIN}|g" "$BACKEND_CONFIG"
-    sed -i.bak "s|redirect-uri: \"\${GOOGLE_OAUTH_REDIRECT_URI:.*}\"|redirect-uri: \"\${GOOGLE_OAUTH_REDIRECT_URI:$NEW_DOMAIN/login/oauth2/code/google}\"|g" "$BACKEND_CONFIG"
-    echo -e "${GREEN}   ✓ application.yml updated${NC}"
-else
-    echo -e "${RED}   ✗ application.yml file not found${NC}"
-fi
+echo -e "${YELLOW}📝 Backend defaults are not rewritten by this runtime helper${NC}"
+echo -e "${YELLOW}   Runtime reads OAuth values from .env, compose, or Kubernetes ConfigMaps.${NC}"
 
 # Update Kubernetes deployment if available
 if check_kubernetes; then
@@ -108,7 +99,6 @@ echo -e "${GREEN}✅ Domain configuration updated successfully!${NC}"
 echo ""
 echo -e "${BLUE}📋 Updated components:${NC}"
 echo -e "   ${GREEN}•${NC} .env file"
-echo -e "   ${GREEN}•${NC} backend/waf-social-api/src/main/resources/application.yml"
 if check_kubernetes; then
     echo -e "   ${GREEN}•${NC} Kubernetes waf-social-api deployment"
 fi
