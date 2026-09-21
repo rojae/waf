@@ -88,6 +88,11 @@ set -a  # automatically export all variables
 source "$ENV_FILE"
 set +a  # stop automatically exporting
 
+CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-${CLICKHOUSE_DB:-waf_analytics}}
+CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
+KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka.waf-processing.svc.cluster.local:9092}
+export CLICKHOUSE_DATABASE CLICKHOUSE_PORT KAFKA_BOOTSTRAP_SERVERS
+
 print_success "Environment variables loaded from: $ENV_FILE"
 
 # =============================================
@@ -114,7 +119,7 @@ print_step "Updating ConfigMaps..."
 
 # Create temporary file with substituted values
 TEMP_CONFIG="/tmp/k8s-configmaps-secrets-applied.yaml"
-CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET}'
+CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${INFLUXDB_ADMIN_PASSWORD} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET} ${CLICKHOUSE_PASSWORD}'
 
 ./scripts/generate-k8s-configmaps.sh
 envsubst "$CONFIG_ENVSUBST_VARS" < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"

@@ -94,15 +94,25 @@ case $CONFIG_MODE in
         read -s -p "NEXTAUTH_SECRET: " NEXTAUTH_SECRET
         echo
         read -p "INFLUXDB_TOKEN: " INFLUXDB_TOKEN
+        read -s -p "INFLUXDB_ADMIN_PASSWORD: " INFLUXDB_ADMIN_PASSWORD
+        echo
         read -p "INFLUXDB_ORG (기본값: waf-org): " INFLUXDB_ORG
         read -p "INFLUXDB_BUCKET (기본값: waf-realtime): " INFLUXDB_BUCKET
+        read -s -p "CLICKHOUSE_PASSWORD: " CLICKHOUSE_PASSWORD
+        echo
+        read -p "CLICKHOUSE_DATABASE (기본값: waf_analytics): " CLICKHOUSE_DATABASE
+        read -p "CLICKHOUSE_PORT (기본값: 9000): " CLICKHOUSE_PORT
 
         # 기본값 설정
         INFLUXDB_ORG=${INFLUXDB_ORG:-"waf-org"}
         INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-"waf-realtime"}
+        CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-"waf_analytics"}
+        CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-"9000"}
+        KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-"kafka.waf-processing.svc.cluster.local:9092"}
 
         export DOMAIN OAUTH_CALLBACK_BASE_URL GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET
-        export JWT_SECRET NEXTAUTH_SECRET INFLUXDB_TOKEN INFLUXDB_ORG INFLUXDB_BUCKET
+        export JWT_SECRET NEXTAUTH_SECRET INFLUXDB_TOKEN INFLUXDB_ADMIN_PASSWORD INFLUXDB_ORG INFLUXDB_BUCKET
+        export CLICKHOUSE_PASSWORD CLICKHOUSE_DATABASE CLICKHOUSE_PORT KAFKA_BOOTSTRAP_SERVERS
         echo "   ✅ 대화형 입력 완료"
         ;;
     *)
@@ -112,10 +122,15 @@ case $CONFIG_MODE in
         ;;
 esac
 
+CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-${CLICKHOUSE_DB:-waf_analytics}}
+CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
+KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka.waf-processing.svc.cluster.local:9092}
+export CLICKHOUSE_DATABASE CLICKHOUSE_PORT KAFKA_BOOTSTRAP_SERVERS
+
 # .local 파일이 있는지 확인하고, 없으면 템플릿에서 생성
 echo "🔧 배포용 manifest 파일 준비 중..."
 
-CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET}'
+CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${INFLUXDB_ADMIN_PASSWORD} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET} ${CLICKHOUSE_PASSWORD}'
 
 # generated configmaps/secrets 파일 처리
 if [ ! -f "k8s/02-configmaps-only.yaml.local" ] || [ "$FORCE_RECREATE" = true ]; then
@@ -144,9 +159,12 @@ echo "📦 Kubernetes 리소스 배포 중..."
 kubectl apply -f k8s/00-namespaces.yaml
 kubectl apply -f k8s/01-storage.yaml
 kubectl apply -f k8s/02-configmaps-only.yaml.local
-kubectl apply -f k8s/03-nginx-waf.yaml
 kubectl apply -f k8s/04-data-stores.yaml
+kubectl wait --for=condition=ready pod -l app=clickhouse -n waf-data --timeout=300s
 kubectl apply -f k8s/05-processing-services.yaml
+kubectl wait --for=condition=ready pod -l app=kafka -n waf-processing --timeout=300s
+kubectl apply -f k8s/11-kafka-clickhouse-consumer.yaml
+kubectl apply -f k8s/03-nginx-waf.yaml
 kubectl apply -f k8s/06-applications.yaml.local
 kubectl apply -f k8s/07-monitoring.yaml
 
