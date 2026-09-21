@@ -27,6 +27,26 @@ ORDER BY (timestamp, client_ip, rule_id)
 TTL timestamp + INTERVAL 1 YEAR
 SETTINGS index_granularity = 8192;
 
+-- Additive compatibility columns for the Kafka -> ClickHouse consumer.
+-- These ALTERs are intentionally non-destructive so existing deployments can
+-- retain data while accepting the enriched insert shape.
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS country_name String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS latitude Float64 DEFAULT 0;
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS longitude Float64 DEFAULT 0;
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS referer String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS accept_language String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS attack_type String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS attack_category String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS severity_level String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS browser String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS browser_version String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS os String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS os_version String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS device String DEFAULT '';
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_bot Bool DEFAULT false;
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_mobile Bool DEFAULT false;
+ALTER TABLE waf_analytics.events ADD COLUMN IF NOT EXISTS is_tablet Bool DEFAULT false;
+
 -- IP별 공격 패턴 집계 테이블  
 CREATE TABLE IF NOT EXISTS waf_analytics.ip_attack_summary (
     date Date,

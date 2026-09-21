@@ -15,22 +15,22 @@ import (
 )
 
 type Alert struct {
-	ClientIP      string `json:"CLIENT_IP"`
-	Method        string `json:"METHOD"`
-	URI           string `json:"URI"`
-	Status        int    `json:"STATUS"`
+	ClientIP       string `json:"CLIENT_IP"`
+	Method         string `json:"METHOD"`
+	URI            string `json:"URI"`
+	Status         int    `json:"STATUS"`
 	AlertTimestamp string `json:"ALERT_TIMESTAMP"`
-	AlertType     string `json:"ALERT_TYPE"`
-	Severity      string `json:"SEVERITY"`
-	Description   string `json:"DESCRIPTION"`
-	MetricValue   int    `json:"METRIC_VALUE"`
+	AlertType      string `json:"ALERT_TYPE"`
+	Severity       string `json:"SEVERITY"`
+	Description    string `json:"DESCRIPTION"`
+	MetricValue    int    `json:"METRIC_VALUE"`
 }
 
 func main() {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers: []string{"kafka:9092"},
-		Topic:   "waf-alerts",
-		GroupID: "alert-processor",
+		Brokers: strings.Split(getEnv("KAFKA_BROKERS", "kafka:9092"), ","),
+		Topic:   getEnv("KAFKA_TOPIC", "waf-alerts"),
+		GroupID: getEnv("KAFKA_GROUP", "alert-processor"),
 	})
 	defer reader.Close()
 
@@ -73,13 +73,20 @@ func main() {
 	}
 }
 
+func getEnv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func processAlert(alert Alert) {
 	timestamp := time.Now().Format("15:04:05")
-	
+
 	// Color codes for severity
 	severityColor := map[string]string{
 		"CRITICAL": "\033[31m", // Red
-		"HIGH":     "\033[33m", // Yellow  
+		"HIGH":     "\033[33m", // Yellow
 		"MEDIUM":   "\033[36m", // Cyan
 		"LOW":      "\033[32m", // Green
 	}
@@ -99,7 +106,7 @@ func processAlert(alert Alert) {
 	}
 	fmt.Printf("   📝 Description: %s\n", alert.Description)
 	fmt.Printf("   ⏰ Timestamp: %s\n", alert.AlertTimestamp)
-	
+
 	// Send to external systems based on severity
 	switch alert.Severity {
 	case "CRITICAL":
@@ -113,6 +120,6 @@ func processAlert(alert Alert) {
 		fmt.Printf("   📢 %sLogging to file%s\n", color, reset)
 		// logToFile(alert)
 	}
-	
+
 	fmt.Printf("%s%s%s\n", color, strings.Repeat("─", 60), reset)
 }

@@ -33,14 +33,14 @@ CREATE STREAM MODSEC_RAW (
 
 -- 2) Analytics Stream (filter analytics track only)
 CREATE STREAM MODSEC_ANALYTICS AS
-SELECT 
+SELECT
   transaction->client_ip AS client_ip,
   transaction->time_stamp AS time_stamp,
   transaction->request->method AS method,
   transaction->request->uri AS uri,
   transaction->response->http_code AS status,
   track
-FROM MODSEC_RAW 
+FROM MODSEC_RAW
 WHERE track = 'analytics'
 EMIT CHANGES;
 
@@ -50,7 +50,7 @@ WITH (
   KAFKA_TOPIC='waf-logs',
   VALUE_FORMAT='JSON'
 ) AS
-SELECT 
+SELECT
   client_ip,
   time_stamp AS ts,
   method,
@@ -63,12 +63,12 @@ EMIT CHANGES;
 -- 4) Real-time anomaly detection and alerting
 
 -- High frequency attack detection (>50 requests per minute)
-CREATE STREAM HIGH_FREQUENCY_ATTACKS 
+CREATE TABLE HIGH_FREQUENCY_ATTACKS
 WITH (
   KAFKA_TOPIC='waf-attack-alerts',
   VALUE_FORMAT='JSON'
 ) AS
-SELECT 
+SELECT
   client_ip,
   COUNT(*) as request_count,
   COLLECT_LIST(uri) as attacked_uris,
@@ -76,19 +76,19 @@ SELECT
   'HIGH_FREQUENCY_ATTACK' as alert_type,
   'CRITICAL' as severity,
   'Client exceeded 50 requests per minute' as description
-FROM MODSEC_ANALYTICS 
+FROM MODSEC_ANALYTICS
 WINDOW TUMBLING (SIZE 1 MINUTE)
 GROUP BY client_ip
 HAVING COUNT(*) > 50
 EMIT CHANGES;
 
 -- Block rate spike detection (>30% blocked in 5 minutes)
-CREATE STREAM BLOCK_RATE_ALERTS 
+CREATE TABLE BLOCK_RATE_ALERTS
 WITH (
   KAFKA_TOPIC='waf-block-alerts',
   VALUE_FORMAT='JSON'
 ) AS
-SELECT 
+SELECT
   WINDOWSTART as alert_timestamp,
   COUNT(*) as total_requests,
   SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as blocked_requests,
@@ -96,9 +96,9 @@ SELECT
   'BLOCK_RATE_SPIKE' as alert_type,
   'WARNING' as severity,
   'Block rate exceeded 30% threshold' as description
-FROM MODSEC_ANALYTICS 
+FROM MODSEC_ANALYTICS
 WINDOW TUMBLING (SIZE 5 MINUTES)
-GROUP BY WINDOWSTART
+GROUP BY 'global'
 HAVING (SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) > 30
 EMIT CHANGES;
 
@@ -110,12 +110,12 @@ WHERE status >= 400
 EMIT CHANGES;
 
 -- Top attacked URIs (>10 requests per URI in 5 minutes)
-CREATE STREAM TOP_ATTACKED_URIS 
+CREATE TABLE TOP_ATTACKED_URIS
 WITH (
   KAFKA_TOPIC='waf-uri-alerts',
   VALUE_FORMAT='JSON'
 ) AS
-SELECT 
+SELECT
   uri,
   COUNT(*) as attack_count,
   COUNT_DISTINCT(client_ip) as unique_attackers,
@@ -130,12 +130,12 @@ HAVING COUNT(*) > 10
 EMIT CHANGES;
 
 -- Unified alerts topic (combines all alert types)
-CREATE STREAM UNIFIED_WAF_ALERTS 
+CREATE STREAM UNIFIED_WAF_ALERTS
 WITH (
   KAFKA_TOPIC='waf-alerts',
   VALUE_FORMAT='JSON'
 ) AS
-SELECT 
+SELECT
   alert_type,
   severity,
   client_ip,
@@ -147,8 +147,8 @@ FROM HIGH_FREQUENCY_ATTACKS
 EMIT CHANGES;
 
 -- Insert block rate alerts into unified stream
-INSERT INTO UNIFIED_WAF_ALERTS 
-SELECT 
+INSERT INTO UNIFIED_WAF_ALERTS
+SELECT
   alert_type,
   severity,
   CAST(NULL AS STRING) as client_ip,
@@ -160,8 +160,8 @@ FROM BLOCK_RATE_ALERTS
 EMIT CHANGES;
 
 -- Insert URI attack alerts into unified stream
-INSERT INTO UNIFIED_WAF_ALERTS 
-SELECT 
+INSERT INTO UNIFIED_WAF_ALERTS
+SELECT
   alert_type,
   severity,
   CAST(NULL AS STRING) as client_ip,
