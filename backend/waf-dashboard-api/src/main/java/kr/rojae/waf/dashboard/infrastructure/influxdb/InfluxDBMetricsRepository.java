@@ -90,69 +90,62 @@ public class InfluxDBMetricsRepository {
     }
 
     private long parseCountResult(java.util.List<FluxTable> result) {
-        try {
-            if (result != null && !result.isEmpty()) {
-                long sum = result.stream()
-                    .flatMap(t -> t.getRecords().stream())
-                    .filter(r -> r.getValue() != null)
-                    .mapToLong(r -> {
-                        Object v = r.getValue();
-                        if (v instanceof Number) return ((Number) v).longValue();
-                        log.warn("Non-numeric value in count aggregation: {} ({})", v, v.getClass().getSimpleName());
-                        return 0L;
-                    })
-                    .sum();
-                return sum;
-            }
-        } catch (Exception e) {
-            log.error("Error parsing count result", e);
+        if (result == null || result.isEmpty()) {
+            return 0L;
         }
-        return 0L;
+        return result.stream()
+                .flatMap(t -> t.getRecords().stream())
+                .mapToLong(r -> numericValue(r.getValue(), "count"))
+                .sum();
     }
 
     private Map<String, Integer> parseGroupedResult(java.util.List<FluxTable> result, String groupColumn) {
-        try {
-            Map<String, Integer> stats = new HashMap<>();
-            if (result != null && !result.isEmpty()) {
-                for (var table : result) {
-                    for (var record : table.getRecords()) {
-                        Object keyObj = record.getValueByKey(groupColumn);
-                        Object valObj = record.getValue();
-                        if (keyObj != null && valObj instanceof Number) {
-                            String key = String.valueOf(keyObj);
-                            int val = ((Number) valObj).intValue();
-                            stats.put(key, stats.getOrDefault(key, 0) + val);
-                        }
-                    }
-                }
-            }
+        Map<String, Integer> stats = new HashMap<>();
+        if (result == null || result.isEmpty()) {
             return stats;
-        } catch (Exception e) {
-            log.warn("Error parsing grouped result", e);
-            return new HashMap<>();
         }
+        for (var table : result) {
+            for (var record : table.getRecords()) {
+                Object keyObj = record.getValueByKey(groupColumn);
+                if (keyObj == null || String.valueOf(keyObj).isBlank()) {
+                    throw malformedMetrics("missing " + groupColumn + " in grouped result");
+                }
+                int val = Math.toIntExact(numericValue(record.getValue(), groupColumn));
+                String key = String.valueOf(keyObj);
+                stats.put(key, stats.getOrDefault(key, 0) + val);
+            }
+        }
+        return stats;
     }
 
     private Map<String, Integer> parseHourlyResult(java.util.List<FluxTable> result) {
-        try {
-            Map<String, Integer> hourlyStats = new HashMap<>();
-            if (result != null && !result.isEmpty()) {
-                for (var table : result) {
-                    for (var record : table.getRecords()) {
-                        if (record.getTime() != null && record.getValue() instanceof Number) {
-                            String timeStr = record.getTime().toString();  // 2025-08-26T15:00:00Z
-                            String hour = (timeStr.length() > 13) ? timeStr.substring(11, 16) : "00:00";
-                            int count = ((Number) record.getValue()).intValue();
-                            hourlyStats.put(hour, hourlyStats.getOrDefault(hour, 0) + count);
-                        }
-                    }
-                }
-            }
+        Map<String, Integer> hourlyStats = new HashMap<>();
+        if (result == null || result.isEmpty()) {
             return hourlyStats;
-        } catch (Exception e) {
-            log.warn("Error parsing hourly result", e);
-            return new HashMap<>();
         }
+        for (var table : result) {
+            for (var record : table.getRecords()) {
+                if (record.getTime() == null) {
+                    throw malformedMetrics("missing _time in hourly result");
+                }
+                String timeStr = record.getTime().toString();  // 2025-08-26T15:00:00Z
+                String hour = (timeStr.length() > 13) ? timeStr.substring(11, 16) : "00:00";
+                int count = Math.toIntExact(numericValue(record.getValue(), "hourly"));
+                hourlyStats.put(hour, hourlyStats.getOrDefault(hour, 0) + count);
+            }
+        }
+        return hourlyStats;
+    }
+
+    private long numericValue(Object value, String context) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        throw malformedMetrics("non-numeric value in " + context + " result");
+    }
+
+    private IllegalStateException malformedMetrics(String message) {
+        return new IllegalStateException("metrics_result_malformed: " + message);
     }
 
     public InfluxDBClient getInfluxDBClient() {
