@@ -44,6 +44,7 @@ type GeoIPInfo struct {
 type ModSecurityEvent struct {
 	Transaction struct {
 		ID           string `json:"id"`
+		UniqueID     string `json:"unique_id"`
 		ClientIP     string `json:"client_ip"`
 		AnomalyScore int    `json:"anomaly_score"`
 		TimeStamp    string `json:"time_stamp"`
@@ -55,10 +56,19 @@ type ModSecurityEvent struct {
 		Response struct {
 			HTTPCode int `json:"http_code"`
 		} `json:"response"`
+		Intervention struct {
+			Status     int    `json:"status"`
+			Disruptive bool   `json:"disruptive"`
+			Action     string `json:"action"`
+		} `json:"intervention"`
 		Messages []struct {
+			Message string `json:"message"`
 			Details struct {
-				RuleID string `json:"ruleId"`
-				Msg    string `json:"msg"`
+				RuleID   string   `json:"ruleId"`
+				Msg      string   `json:"msg"`
+				Message  string   `json:"message"`
+				Severity string   `json:"severity"`
+				Tags     []string `json:"tags"`
 			} `json:"details"`
 		} `json:"messages"`
 	} `json:"transaction"`
@@ -70,13 +80,24 @@ type ModSecurityEvent struct {
 	} `json:"classification"`
 }
 
+type kafkaMessageReader interface {
+	FetchMessage(context.Context) (kafka.Message, error)
+	CommitMessages(context.Context, ...kafka.Message) error
+	Close() error
+}
+
+type eventSink interface {
+	WriteEvent(context.Context, ModSecurityEvent, int) error
+}
+
 // ===== Processor =====
 type RealTimeProcessor struct {
 	config       Config
-	kafkaReader  *kafka.Reader
+	kafkaReader  kafkaMessageReader
 	influxClient influxdb2.Client
-	writeAPI     api.WriteAPI         // async (legacy waf_events)
-	writeBlk     api.WriteAPIBlocking // blocking (waf_requests)
+	writeBlk     api.WriteAPIBlocking
+	sink         eventSink
+	retryBackoff time.Duration
 	logger       *logrus.Logger
 	geoipDB      *geoip2.Reader
 }
@@ -112,7 +133,6 @@ func NewRealTimeProcessor(config Config) *RealTimeProcessor {
 
 	// InfluxDB
 	influxClient := influxdb2.NewClient(config.InfluxDBURL, config.InfluxDBToken)
-	writeAPI := influxClient.WriteAPI(config.InfluxDBOrg, config.InfluxDBBucket)
 	writeBlk := influxClient.WriteAPIBlocking(config.InfluxDBOrg, config.InfluxDBBucket)
 
 	logger.WithFields(logrus.Fields{
@@ -125,26 +145,26 @@ func NewRealTimeProcessor(config Config) *RealTimeProcessor {
 		"dual_write":    config.DualWrite,
 	}).Info("Realtime processor config")
 
-	return &RealTimeProcessor{
+	processor := &RealTimeProcessor{
 		config:       config,
 		kafkaReader:  reader,
 		influxClient: influxClient,
-		writeAPI:     writeAPI,
 		writeBlk:     writeBlk,
+		sink:         nil,
+		retryBackoff: 200 * time.Millisecond,
 		logger:       logger,
 		geoipDB:      geoipDB,
 	}
+	processor.sink = processor
+	return processor
 }
 
 // ===== Start / Close =====
 func (rtp *RealTimeProcessor) Start(ctx context.Context) error {
 	rtp.logger.Info("Starting real-time processor (Kafka mode)...")
 
-	// drain async write errors
-	go rtp.handleInfluxDBErrors(ctx)
-
 	for {
-		m, err := rtp.kafkaReader.ReadMessage(ctx)
+		m, err := rtp.kafkaReader.FetchMessage(ctx)
 		if err != nil {
 			if err == context.Canceled {
 				break
@@ -158,33 +178,73 @@ func (rtp *RealTimeProcessor) Start(ctx context.Context) error {
 			continue
 		}
 
-		var event ModSecurityEvent
-		if err := json.Unmarshal(m.Value, &event); err != nil {
-			rtp.logger.Errorf("Error unmarshaling event: %v", err)
-			continue
+		if err := rtp.processFetchedMessage(ctx, m); err != nil {
+			return err
 		}
-
-		severity := rtp.calculateSeverity(event)
-		rtp.writeToInfluxDB(event, severity)
-
-		if severity >= 80 {
-			rtp.triggerAlert(event, severity)
-		}
-
-		rtp.logger.WithFields(logrus.Fields{
-			"tx_id":     event.Transaction.ID,
-			"client_ip": event.Transaction.ClientIP,
-			"severity":  severity,
-			"rule_id":   event.Classification.RuleID,
-		}).Info("Processed real-time event")
 	}
 	return nil
 }
 
-func (rtp *RealTimeProcessor) Close() {
-	if rtp.writeAPI != nil {
-		rtp.writeAPI.Flush()
+func (rtp *RealTimeProcessor) processFetchedMessage(ctx context.Context, m kafka.Message) error {
+	var event ModSecurityEvent
+	if err := json.Unmarshal(m.Value, &event); err != nil {
+		rtp.logger.WithError(err).Error("rejecting malformed WAF event")
+		// Malformed JSON is treated as poison input and committed so it cannot
+		// block the partition forever. Valid events are never committed until
+		// all required writes succeed.
+		return rtp.kafkaReader.CommitMessages(ctx, m)
 	}
+
+	rtp.normalizeEvent(&event, m.Time)
+	severity := rtp.calculateSeverity(event)
+	if err := rtp.writeEventWithRetry(ctx, event, severity); err != nil {
+		return err
+	}
+	if err := rtp.kafkaReader.CommitMessages(ctx, m); err != nil {
+		return err
+	}
+
+	if severity >= 80 {
+		rtp.triggerAlert(event, severity)
+	}
+
+	rtp.logger.WithFields(logrus.Fields{
+		"tx_id":     eventID(event),
+		"client_ip": event.Transaction.ClientIP,
+		"severity":  severity,
+		"rule_id":   effectiveRuleID(event),
+	}).Info("Processed real-time event")
+	return nil
+}
+
+func (rtp *RealTimeProcessor) writeEventWithRetry(ctx context.Context, event ModSecurityEvent, severity int) error {
+	backoff := rtp.retryBackoff
+	if backoff <= 0 {
+		backoff = 200 * time.Millisecond
+	}
+	for {
+		if err := rtp.sink.WriteEvent(ctx, event, severity); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			rtp.logger.WithError(err).Warn("required WAF event write failed; retrying before committing Kafka offset")
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+			if backoff < 5*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		return nil
+	}
+}
+
+func (rtp *RealTimeProcessor) Close() {
 	if rtp.influxClient != nil {
 		rtp.influxClient.Close()
 	}
@@ -210,15 +270,16 @@ func isNoise(err error) bool {
 // ===== Logic =====
 func (rtp *RealTimeProcessor) calculateSeverity(event ModSecurityEvent) int {
 	severity := event.Transaction.AnomalyScore
-	if event.Classification.RuleID != "" {
+	ruleID := effectiveRuleID(event)
+	if ruleID != "" {
 		switch {
-		case strings.HasPrefix(event.Classification.RuleID, "942"): // SQLi
+		case strings.HasPrefix(ruleID, "942"): // SQLi
 			severity += 30
-		case strings.HasPrefix(event.Classification.RuleID, "941"): // XSS
+		case strings.HasPrefix(ruleID, "941"): // XSS
 			severity += 25
-		case strings.HasPrefix(event.Classification.RuleID, "932"): // RCE
+		case strings.HasPrefix(ruleID, "932"): // RCE
 			severity += 35
-		case strings.HasPrefix(event.Classification.RuleID, "930"): // LFI
+		case strings.HasPrefix(ruleID, "930"): // LFI
 			severity += 20
 		}
 	}
@@ -238,17 +299,19 @@ func (rtp *RealTimeProcessor) isHighRiskIP(ip string) bool {
 }
 
 // ===== Influx write =====
-func (rtp *RealTimeProcessor) writeToInfluxDB(event ModSecurityEvent, severity int) {
+func (rtp *RealTimeProcessor) WriteEvent(ctx context.Context, event ModSecurityEvent, severity int) error {
 	geoInfo := rtp.lookupGeoIP(event.Transaction.ClientIP)
-	blocked := rtp.determineBlocked(event.Transaction.Response.HTTPCode, severity)
-	attackType := rtp.mapAttackType(event.Classification.RuleID)
+	ruleID := effectiveRuleID(event)
+	blocked := rtp.determineBlocked(event)
+	attackType := rtp.mapAttackType(ruleID)
 	ts := rtp.parseEventTime(event)
 
-	// 1) legacy: waf_events (async)
+	// 1) legacy: waf_events. It is written through the blocking API so the
+	// Kafka offset is not committed before this required measurement is durable.
 	pLegacy := influxdb2.NewPointWithMeasurement("waf_events").
 		AddTag("client_ip", event.Transaction.ClientIP).
 		AddTag("method", event.Transaction.Request.Method).
-		AddTag("rule_id", event.Classification.RuleID).
+		AddTag("rule_id", ruleID).
 		AddTag("severity_level", rtp.getSeverityLevel(severity)).
 		AddTag("geo_country", geoInfo.Country).
 		AddTag("geo_city", geoInfo.City).
@@ -259,14 +322,16 @@ func (rtp *RealTimeProcessor) writeToInfluxDB(event ModSecurityEvent, severity i
 		AddField("geo_latitude", geoInfo.Latitude).
 		AddField("geo_longitude", geoInfo.Longitude).
 		SetTime(ts)
-	rtp.writeAPI.WritePoint(pLegacy)
+	if err := rtp.writeBlk.WritePoint(ctx, pLegacy); err != nil {
+		return err
+	}
 
 	// 2) new: waf_requests (blocking)
 	if rtp.config.DualWrite {
 		pRequests := influxdb2.NewPointWithMeasurement("waf_requests").
 			AddTag("client_ip", event.Transaction.ClientIP).
 			AddTag("method", event.Transaction.Request.Method).
-			AddTag("rule_id", event.Classification.RuleID).
+			AddTag("rule_id", ruleID).
 			AddTag("attack_type", attackType).
 			AddTag("blocked", map[bool]string{true: "true", false: "false"}[blocked]).
 			AddTag("country", geoInfo.Country).
@@ -281,15 +346,15 @@ func (rtp *RealTimeProcessor) writeToInfluxDB(event ModSecurityEvent, severity i
 			AddField("longitude", geoInfo.Longitude).
 			SetTime(ts)
 
-		if err := rtp.writeBlk.WritePoint(context.Background(), pRequests); err != nil {
-			rtp.logger.WithError(err).Error("failed to write waf_requests")
-		} else {
-			rtp.logger.WithFields(logrus.Fields{
-				"measurement": "waf_requests",
-				"bucket":      rtp.config.InfluxDBBucket,
-			}).Debug("wrote waf_requests")
+		if err := rtp.writeBlk.WritePoint(ctx, pRequests); err != nil {
+			return err
 		}
+		rtp.logger.WithFields(logrus.Fields{
+			"measurement": "waf_requests",
+			"bucket":      rtp.config.InfluxDBBucket,
+		}).Debug("wrote waf_requests")
 	}
+	return nil
 }
 
 func (rtp *RealTimeProcessor) getSeverityLevel(severity int) string {
@@ -305,8 +370,16 @@ func (rtp *RealTimeProcessor) getSeverityLevel(severity int) string {
 	}
 }
 
-func (rtp *RealTimeProcessor) determineBlocked(httpCode, severity int) bool {
-	return httpCode == 403 || severity >= 80
+func (rtp *RealTimeProcessor) determineBlocked(event ModSecurityEvent) bool {
+	if event.Transaction.Intervention.Disruptive {
+		return true
+	}
+	switch strings.ToLower(event.Transaction.Intervention.Action) {
+	case "deny", "drop", "block":
+		return true
+	}
+	// HTTP 403 is a response-status inference, not a severity inference.
+	return event.Transaction.Response.HTTPCode == 403 || event.Transaction.Intervention.Status == 403
 }
 
 func (rtp *RealTimeProcessor) mapAttackType(ruleID string) string {
@@ -345,6 +418,41 @@ func (rtp *RealTimeProcessor) parseEventTime(event ModSecurityEvent) time.Time {
 	return time.Now()
 }
 
+func (rtp *RealTimeProcessor) normalizeEvent(event *ModSecurityEvent, kafkaTime time.Time) {
+	if event.Classification.RuleID == "" {
+		event.Classification.RuleID = firstMessageRuleID(*event)
+	}
+	if event.Classification.Timestamp == "" && event.Transaction.TimeStamp == "" {
+		if kafkaTime.IsZero() {
+			kafkaTime = time.Now()
+		}
+		event.Classification.Timestamp = kafkaTime.UTC().Format(time.RFC3339Nano)
+	}
+}
+
+func firstMessageRuleID(event ModSecurityEvent) string {
+	for _, msg := range event.Transaction.Messages {
+		if msg.Details.RuleID != "" {
+			return msg.Details.RuleID
+		}
+	}
+	return ""
+}
+
+func effectiveRuleID(event ModSecurityEvent) string {
+	if event.Classification.RuleID != "" {
+		return event.Classification.RuleID
+	}
+	return firstMessageRuleID(event)
+}
+
+func eventID(event ModSecurityEvent) string {
+	if event.Transaction.ID != "" {
+		return event.Transaction.ID
+	}
+	return event.Transaction.UniqueID
+}
+
 func (rtp *RealTimeProcessor) lookupGeoIP(ipAddr string) GeoIPInfo {
 	if rtp.geoipDB == nil {
 		return GeoIPInfo{Country: "unknown", City: "unknown", Latitude: 0, Longitude: 0}
@@ -369,29 +477,14 @@ func (rtp *RealTimeProcessor) triggerAlert(event ModSecurityEvent, severity int)
 	geoInfo := rtp.lookupGeoIP(event.Transaction.ClientIP)
 	rtp.logger.WithFields(logrus.Fields{
 		"alert_type":  "CRITICAL_SECURITY_EVENT",
-		"tx_id":       event.Transaction.ID,
+		"tx_id":       eventID(event),
 		"client_ip":   event.Transaction.ClientIP,
 		"geo_country": geoInfo.Country,
 		"geo_city":    geoInfo.City,
 		"severity":    severity,
-		"rule_id":     event.Classification.RuleID,
+		"rule_id":     effectiveRuleID(event),
 		"uri":         event.Transaction.Request.URI,
 	}).Warn("🚨 CRITICAL SECURITY ALERT TRIGGERED")
-}
-
-// drain async write errors
-func (rtp *RealTimeProcessor) handleInfluxDBErrors(ctx context.Context) {
-	errorsCh := rtp.writeAPI.Errors()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case err := <-errorsCh:
-			if err != nil {
-				rtp.logger.Errorf("InfluxDB write error: %v", err)
-			}
-		}
-	}
 }
 
 // ===== main =====
