@@ -269,6 +269,29 @@ test('whitelist page presents whitelist records as stored drafts only', () => {
   assert.doesNotMatch(source, />Active</)
 })
 
+
+test('dashboard status copy does not claim backend WAF health without a metric', () => {
+  const source = read('src/app/dashboard/page.tsx')
+
+  assert.match(source, /WAF Engine Status/)
+  assert.match(source, /Not reported by backend/)
+  assert.match(source, /Request Count Metric/)
+  assert.doesNotMatch(source, /All systems operational/)
+  assert.doesNotMatch(source, /Data Pipeline/)
+})
+
+test('alerts page shows recent-query mode instead of live connected stream', () => {
+  const source = read('src/app/dashboard/alerts/page.tsx')
+
+  assert.match(source, /getRecentAlerts/)
+  assert.match(source, /Live alert stream unavailable/)
+  assert.match(source, /recent alert query only/)
+  assert.doesNotMatch(source, /createAlertStream/)
+  assert.doesNotMatch(source, /setStreamConnected/)
+  assert.doesNotMatch(source, /Connected to real-time alerts/)
+  assert.doesNotMatch(source, /label="Live"/)
+})
+
 test('legacy custom-rules path redirects to canonical dashboard route without demo data', () => {
   const source = read('src/app/custom-rules/page.tsx')
 

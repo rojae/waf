@@ -21,7 +21,8 @@ import {
   Divider,
   LinearProgress,
   Alert,
-  Stack
+  Stack,
+  useMediaQuery
 } from '@mui/material'
 import {
   Block,
@@ -78,6 +79,7 @@ export default function Dashboard() {
   const { logout } = useAuth()
   const { user, loading } = useAuthGuard()
   const router = useRouter()
+  const compactCharts = useMediaQuery('(max-width:430px)')
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [metricsError, setMetricsError] = useState<string | null>(null)
@@ -171,6 +173,8 @@ export default function Dashboard() {
         hour,
         requests
       })) : []
+  const mainChartWidth = compactCharts ? 250 : 300
+  const trendChartWidth = compactCharts ? 230 : 250
 
   if (loading) {
     return (
@@ -207,8 +211,21 @@ export default function Dashboard() {
           borderBottom: '1px solid rgba(0,0,0,0.1)'
         }}
       >
-        <Toolbar sx={{ py: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mr: 3 }}>
+        <Toolbar sx={{
+          py: 1,
+          display: 'flex',
+          flexWrap: { xs: 'wrap', md: 'nowrap' },
+          gap: { xs: 1.5, md: 0 },
+          alignItems: 'center',
+          minWidth: 0,
+        }}>
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            mr: { xs: 0, md: 3 },
+            minWidth: 0,
+            flex: { xs: '1 1 100%', md: '0 0 auto' },
+          }}>
             <Avatar 
               sx={{ 
                 bgcolor: 'primary.main', 
@@ -228,17 +245,32 @@ export default function Dashboard() {
             </Box>
           </Box>
           
-          <Box sx={{ flexGrow: 1 }} />
+          <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'block' } }} />
           
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: { xs: 'flex-start', md: 'flex-end' },
+            gap: { xs: 1, md: 2 },
+            flexWrap: 'wrap',
+            minWidth: 0,
+            width: { xs: '100%', md: 'auto' },
+          }}>
             {/* Navigation Buttons */}
-            <Box sx={{ display: 'flex', gap: 1, mr: 2 }}>
+            <Box sx={{
+              display: 'flex',
+              gap: 1,
+              mr: { xs: 0, md: 2 },
+              flexWrap: 'wrap',
+              minWidth: 0,
+            }}>
               <Button
                 variant="outlined"
                 startIcon={<Assignment />}
                 onClick={() => router.push('/dashboard/custom-rules')}
                 size="small"
                 sx={{
+                  whiteSpace: 'nowrap',
                   borderColor: 'primary.main',
                   color: 'primary.main',
                   '&:hover': { backgroundColor: 'primary.main', color: 'white' }
@@ -252,6 +284,7 @@ export default function Dashboard() {
                 onClick={() => router.push('/dashboard/rules')}
                 size="small"
                 sx={{
+                  whiteSpace: 'nowrap',
                   borderColor: 'grey.300',
                   color: 'text.primary',
                   '&:hover': { backgroundColor: 'grey.100' }
@@ -265,6 +298,7 @@ export default function Dashboard() {
                 onClick={() => router.push('/dashboard/alerts')}
                 size="small"
                 sx={{
+                  whiteSpace: 'nowrap',
                   borderColor: 'grey.300',
                   color: 'text.primary',
                   '&:hover': { backgroundColor: 'grey.100' }
@@ -274,7 +308,7 @@ export default function Dashboard() {
               </Button>
             </Box>
 
-            <Divider orientation="vertical" flexItem />
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
 
             <Chip
               icon={metricsError ? <Warning /> : <CheckCircle />}
@@ -289,12 +323,12 @@ export default function Dashboard() {
             <IconButton onClick={handleRefresh} disabled={refreshing}>
               {refreshing ? <CircularProgress size={20} /> : <Refresh />}
             </IconButton>
-            <Divider orientation="vertical" flexItem />
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
               <Avatar sx={{ width: 32, height: 32 }}>
                 {user?.name?.charAt(0)}
               </Avatar>
-              <Typography variant="body2" sx={{ color: 'text.primary' }}>
+              <Typography variant="body2" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
                 {user?.name}
               </Typography>
             </Box>
@@ -304,6 +338,7 @@ export default function Dashboard() {
               onClick={logout}
               size="small"
               sx={{
+                whiteSpace: 'nowrap',
                 borderColor: 'grey.300',
                 color: 'text.primary',
                 '&:hover': { borderColor: 'error.main', color: 'error.main' }
@@ -522,13 +557,13 @@ export default function Dashboard() {
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Stack spacing={2}>
-                  <Alert severity="success">
+                  <Alert severity="info">
                     <Typography variant="subtitle2">WAF Engine Status</Typography>
-                    <Typography variant="body2">All systems operational</Typography>
+                    <Typography variant="body2">Not reported by backend</Typography>
                   </Alert>
                   <Alert severity="info">
-                    <Typography variant="subtitle2">Data Pipeline</Typography>
-                    <Typography variant="body2">Processing {(metrics?.totalRequests || 0).toLocaleString()} req/hr</Typography>
+                    <Typography variant="subtitle2">Request Count Metric</Typography>
+                    <Typography variant="body2">{(metrics?.totalRequests || 0).toLocaleString()} requests reported</Typography>
                   </Alert>
                   <Alert severity={metrics?.blockedRequests && metrics.blockedRequests > 0 ? "warning" : "success"}>
                     <Typography variant="subtitle2">Threat Level</Typography>
@@ -559,7 +594,7 @@ export default function Dashboard() {
                     <Warning color="error" />
                     Attack Types Distribution
                   </Typography>
-                  <Box sx={{ height: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  <Box sx={{ height: 300, display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden' }}>
                     {metricsLoading ? (
                       <CircularProgress />
                     ) : attackTypeChartData.length > 0 ? (
@@ -568,7 +603,7 @@ export default function Dashboard() {
                           series={[{
                             data: attackTypeChartData
                           }]}
-                          width={300}
+                          width={mainChartWidth}
                           height={250}
                         />
                       </ChartWrapper>
@@ -586,7 +621,7 @@ export default function Dashboard() {
                     <Error color="error" />
                     Threat Severity Levels
                   </Typography>
-                  <Box sx={{ height: 300, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  <Box sx={{ height: 300, display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden' }}>
                     {metricsLoading ? (
                       <CircularProgress />
                     ) : severityChartData.length > 0 ? (
@@ -594,7 +629,7 @@ export default function Dashboard() {
                         <BarChart
                           xAxis={[{ scaleType: 'band', data: severityChartData.map(d => d.label) }]}
                           series={[{ data: severityChartData.map(d => d.value) }]}
-                          width={300}
+                          width={mainChartWidth}
                           height={250}
                           colors={severityChartData.map(d => d.color).filter((c): c is string => c !== undefined)}
                         />
@@ -655,7 +690,7 @@ export default function Dashboard() {
                       <Timeline color="info" />
                       Request Trends
                     </Typography>
-                    <Box sx={{ height: 200, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <Box sx={{ height: 200, display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', overflow: 'hidden' }}>
                       {metricsLoading ? (
                         <CircularProgress />
                       ) : hourlyData.length > 0 ? (
@@ -667,7 +702,7 @@ export default function Dashboard() {
                               curve: 'monotoneX',
                               color: '#2196f3'
                             }]}
-                            width={250}
+                            width={trendChartWidth}
                             height={150}
                           />
                         </ChartWrapper>
