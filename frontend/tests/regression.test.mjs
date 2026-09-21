@@ -280,6 +280,17 @@ test('dashboard status copy does not claim backend WAF health without a metric',
   assert.doesNotMatch(source, /Data Pipeline/)
 })
 
+
+test('dashboard mobile pie legend is placed below the chart', () => {
+  const source = read('src/app/dashboard/page.tsx')
+
+  assert.match(source, /pieChartHeight/)
+  assert.match(source, /direction: compactCharts \? 'horizontal' : 'vertical'/)
+  assert.match(source, /vertical: 'bottom'/)
+  assert.match(source, /horizontal: 'center'/)
+  assert.match(source, /outerRadius: compactCharts \? 70 : undefined/)
+})
+
 test('alerts page shows recent-query mode instead of live connected stream', () => {
   const source = read('src/app/dashboard/alerts/page.tsx')
 

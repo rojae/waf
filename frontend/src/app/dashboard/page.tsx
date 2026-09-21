@@ -174,6 +174,7 @@ export default function Dashboard() {
         requests
       })) : []
   const mainChartWidth = compactCharts ? 250 : 300
+  const pieChartHeight = compactCharts ? 280 : 250
   const trendChartWidth = compactCharts ? 230 : 250
 
   if (loading) {
@@ -601,10 +602,33 @@ export default function Dashboard() {
                       <ChartWrapper loading={metricsLoading}>
                         <PieChart
                           series={[{
-                            data: attackTypeChartData
+                            data: attackTypeChartData,
+                            cx: compactCharts ? 125 : undefined,
+                            outerRadius: compactCharts ? 70 : undefined,
                           }]}
                           width={mainChartWidth}
-                          height={250}
+                          height={pieChartHeight}
+                          margin={compactCharts ? { top: 8, right: 8, bottom: 92, left: 8 } : undefined}
+                          slotProps={{
+                            legend: {
+                              direction: compactCharts ? 'horizontal' : 'vertical',
+                              position: compactCharts
+                                ? { vertical: 'bottom', horizontal: 'center' }
+                                : { vertical: 'middle', horizontal: 'end' },
+                              sx: compactCharts ? {
+                                maxWidth: mainChartWidth,
+                                justifyContent: 'center',
+                                '& .MuiChartsLegend-series': {
+                                  maxWidth: 118,
+                                },
+                                '& .MuiChartsLegend-label': {
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                },
+                              } : undefined,
+                            },
+                          }}
                         />
                       </ChartWrapper>
                     ) : (
