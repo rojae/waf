@@ -70,6 +70,7 @@ class KafkaClickHouseConsumer:
         self.clickhouse_client = None
         self.batch = []
         self.batch_messages = []
+        self.batch_inserted_pending_commit = False
         self.last_insert_time = time.time()
         self.geoip_reader = None
 
@@ -419,65 +420,70 @@ class KafkaClickHouseConsumer:
             return True
 
         try:
-            # Prepare data for insertion
-            data_to_insert = []
-            for event in self.batch:
-                data_to_insert.append((
-                    event['timestamp'],
-                    event['tx_id'],
-                    event['client_ip'],
-                    event['country_code'],
-                    event['country_name'],
-                    event['city'],
-                    event['latitude'],
-                    event['longitude'],
-                    event['uri'],
-                    event['method'],
-                    event['status_code'],
-                    event['referer'],
-                    event['accept_language'],
-                    event['rule_id'],
-                    event['anomaly_score'],
-                    event['severity'],
-                    event['category'],
-                    event['msg'],
-                    event['classification_track'],
-                    event['attack_type'],
-                    event['attack_category'],
-                    event['severity_level'],
-                    event['is_scanner_detected'],
-                    event['user_agent'],
-                    event['browser'],
-                    event['browser_version'],
-                    event['os'],
-                    event['os_version'],
-                    event['device'],
-                    event['is_bot'],
-                    event['is_mobile'],
-                    event['is_tablet'],
-                    event['tags']
-                ))
+            if not self.batch_inserted_pending_commit:
+                # Prepare data for insertion
+                data_to_insert = []
+                for event in self.batch:
+                    data_to_insert.append((
+                        event['timestamp'],
+                        event['tx_id'],
+                        event['client_ip'],
+                        event['country_code'],
+                        event['country_name'],
+                        event['city'],
+                        event['latitude'],
+                        event['longitude'],
+                        event['uri'],
+                        event['method'],
+                        event['status_code'],
+                        event['referer'],
+                        event['accept_language'],
+                        event['rule_id'],
+                        event['anomaly_score'],
+                        event['severity'],
+                        event['category'],
+                        event['msg'],
+                        event['classification_track'],
+                        event['attack_type'],
+                        event['attack_category'],
+                        event['severity_level'],
+                        event['is_scanner_detected'],
+                        event['user_agent'],
+                        event['browser'],
+                        event['browser_version'],
+                        event['os'],
+                        event['os_version'],
+                        event['device'],
+                        event['is_bot'],
+                        event['is_mobile'],
+                        event['is_tablet'],
+                        event['tags']
+                    ))
 
-            # Insert to ClickHouse
-            self.clickhouse_client.execute(
-                '''
-                INSERT INTO waf_analytics.events
-                (timestamp, tx_id, client_ip, country_code, country_name, city, latitude, longitude,
-                 uri, method, status_code, referer, accept_language,
-                 rule_id, anomaly_score, severity, category, msg, classification_track,
-                 attack_type, attack_category, severity_level, is_scanner_detected,
-                 user_agent, browser, browser_version, os, os_version, device,
-                 is_bot, is_mobile, is_tablet, tags)
-                VALUES
-                ''',
-                data_to_insert
-            )
+                # Insert to ClickHouse
+                self.clickhouse_client.execute(
+                    '''
+                    INSERT INTO waf_analytics.events
+                    (timestamp, tx_id, client_ip, country_code, country_name, city, latitude, longitude,
+                     uri, method, status_code, referer, accept_language,
+                     rule_id, anomaly_score, severity, category, msg, classification_track,
+                     attack_type, attack_category, severity_level, is_scanner_detected,
+                     user_agent, browser, browser_version, os, os_version, device,
+                     is_bot, is_mobile, is_tablet, tags)
+                    VALUES
+                    ''',
+                    data_to_insert
+                )
+                self.batch_inserted_pending_commit = True
+                logger.info(f"✓ Inserted {len(self.batch)} events to ClickHouse")
+            else:
+                logger.info("Retrying Kafka offset commit for previously inserted ClickHouse batch")
 
-            logger.info(f"✓ Inserted {len(self.batch)} events to ClickHouse")
             if not self.commit_batch_offsets():
                 return False
             self.batch = []
             self.batch_messages = []
+            self.batch_inserted_pending_commit = False
             self.last_insert_time = time.time()
             return True
 

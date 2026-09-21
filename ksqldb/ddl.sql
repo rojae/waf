@@ -24,7 +24,12 @@ CREATE STREAM MODSEC_RAW (
       >
     >>
   >,
-  track STRING,
+  classification STRUCT<
+    track STRING,
+    anomaly_score INT,
+    rule_id STRING,
+    timestamp STRING
+  >,
   processed_timestamp STRING
 ) WITH (
   KAFKA_TOPIC='waf-realtime-events',
@@ -39,9 +44,9 @@ SELECT
   transaction->request->method AS method,
   transaction->request->uri AS uri,
   transaction->response->http_code AS status,
-  track
+  classification->track AS track
 FROM MODSEC_RAW
-WHERE track = 'analytics'
+WHERE classification->track = 'analytics'
 EMIT CHANGES;
 
 -- 3) Output to analytics topic for Logstash consumption
