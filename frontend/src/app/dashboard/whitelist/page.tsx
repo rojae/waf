@@ -78,7 +78,7 @@ export default function WhitelistPage() {
     try {
       const updatedEntry = await apiClient.toggleWhitelistEntry<WhitelistEntry>(entry.id, !entry.enabled)
       setEntries(prev => prev.map(e => e.id === entry.id ? updatedEntry : e))
-      toast.success(`Entry ${updatedEntry.enabled ? 'enabled' : 'disabled'}`)
+      toast.success(`Whitelist draft ${updatedEntry.enabled ? 'enabled' : 'disabled'}. Not yet applied to nginx.`)
     } catch (error) {
       toast.error('Failed to toggle entry')
       console.error('Error toggling entry:', error)
@@ -106,11 +106,11 @@ export default function WhitelistPage() {
           ...formData
         })
         setEntries(prev => prev.map(e => e.id === editingEntry.id ? updatedEntry : e))
-        toast.success('Entry updated successfully')
+        toast.success('Whitelist draft updated. Not yet applied to nginx.')
       } else {
         const newEntry = await apiClient.createWhitelistEntry<WhitelistEntry>(formData)
         setEntries(prev => [...prev, newEntry])
-        toast.success('Entry created successfully')
+        toast.success('Whitelist draft created. Not yet applied to nginx.')
       }
       
       setShowCreateForm(false)
@@ -178,9 +178,9 @@ export default function WhitelistPage() {
           {showCreateForm && (
             <Card className="mb-6">
               <CardHeader>
-                <CardTitle>{editingEntry ? 'Edit Whitelist Entry' : 'Add IP to Whitelist'}</CardTitle>
+                <CardTitle>{editingEntry ? 'Edit Whitelist Draft' : 'Add IP Whitelist Draft'}</CardTitle>
                 <CardDescription>
-                  {editingEntry ? 'Update the whitelist entry' : 'Add a trusted IP address or subnet'}
+                  {editingEntry ? 'Update the stored whitelist draft' : 'Store a whitelist draft. Drafts are not applied to nginx yet.'}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -216,7 +216,7 @@ export default function WhitelistPage() {
                       checked={formData.enabled}
                       onCheckedChange={(enabled) => setFormData(prev => ({...prev, enabled}))}
                     />
-                    <Label htmlFor="enabled">Enabled</Label>
+                    <Label htmlFor="enabled">Draft enabled</Label>
                   </div>
 
                   <div className="flex space-x-2">
@@ -241,9 +241,9 @@ export default function WhitelistPage() {
           {/* Whitelist Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Whitelisted IPs ({entries.length})</CardTitle>
+              <CardTitle>Whitelist Drafts ({entries.length})</CardTitle>
               <CardDescription>
-                Trusted IP addresses that bypass WAF filtering
+                Stored whitelist records only. These drafts are persistent but not applied to nginx yet.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -277,7 +277,7 @@ export default function WhitelistPage() {
                             onCheckedChange={() => handleToggleEntry(entry)}
                           />
                           <Badge variant={entry.enabled ? 'secondary' : 'outline'}>
-                            {entry.enabled ? 'Active' : 'Inactive'}
+                            {entry.enabled ? 'Draft enabled' : 'Draft disabled'}
                           </Badge>
                         </div>
                       </TableCell>
@@ -303,8 +303,8 @@ export default function WhitelistPage() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Remove from Whitelist</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to remove &quot;{entry.ip}&quot; from the whitelist? 
-                                  This IP will be subject to WAF filtering again.
+                                  Are you sure you want to remove the stored draft for &quot;{entry.ip}&quot;?
+                                  This changes only the draft record and is not applied to nginx.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
