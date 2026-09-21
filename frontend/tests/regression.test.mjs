@@ -237,6 +237,17 @@ test('ApiClient treats 204 and empty successful bodies as successful void respon
   await assert.doesNotReject(() => client.deleteWhitelistEntry('7'))
 })
 
+
+test('dashboard metrics and recent alerts routes use shared JSON proxy', () => {
+  const metricsRoute = read('src/app/api/dashboard/metrics/route.ts')
+  const alertsRoute = read('src/app/api/alerts/recent/route.ts')
+
+  assert.match(metricsRoute, /proxyJson\(request, 'dashboard', '\/api\/dashboard\/metrics'\)/)
+  assert.match(alertsRoute, /proxyJson\(request, 'dashboard', '\/api\/alerts\/recent'\)/)
+  assert.doesNotMatch(metricsRoute + alertsRoute, /response\.json\(\)/)
+  assert.doesNotMatch(metricsRoute + alertsRoute, /ENV\.DASHBOARD_API_URL/)
+})
+
 test('JSON proxy returns null body for upstream 204', async () => {
   const { proxyJson } = loadTsModule('src/lib/server/proxy.ts', {
     'next/server': { NextResponse: MockNextResponse },
@@ -256,6 +267,30 @@ test('JSON proxy returns null body for upstream 204', async () => {
 
   assert.equal(response.status, 204)
   assert.equal(await response.text(), '')
+})
+
+
+test('JSON proxy preserves empty upstream 503 and forwards auth cookies', async () => {
+  const calls = []
+  const { proxyJson } = loadTsModule('src/lib/server/proxy.ts', {
+    'next/server': { NextResponse: MockNextResponse },
+    '@/lib/constants': constantsStub(),
+  })
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: url.toString(), init })
+    return new Response('', { status: 503 })
+  }
+
+  const response = await proxyJson(
+    request('http://app.local/api/dashboard/metrics', { cookie: 'WAF_AT=token' }),
+    'dashboard',
+    '/api/dashboard/metrics',
+  )
+
+  assert.equal(response.status, 503)
+  assert.equal(await response.text(), '')
+  assert.equal(calls[0].url, 'http://dashboard.internal/api/dashboard/metrics')
+  assert.equal(calls[0].init.headers.get('Cookie'), 'WAF_AT=token')
 })
 
 test('whitelist page presents whitelist records as stored drafts only', () => {
