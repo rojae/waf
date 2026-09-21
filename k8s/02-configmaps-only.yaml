@@ -193,6 +193,7 @@ metadata:
 type: Opaque
 stringData:
   influxdb-token: "${INFLUXDB_TOKEN}"
+  influxdb-admin-password: "${INFLUXDB_ADMIN_PASSWORD}"
 
 ---
 apiVersion: v1
@@ -203,6 +204,7 @@ metadata:
 type: Opaque
 stringData:
   influxdb-token: "${INFLUXDB_TOKEN}"
+  influxdb-admin-password: "${INFLUXDB_ADMIN_PASSWORD}"
 
 ---
 apiVersion: v1
@@ -213,6 +215,27 @@ metadata:
 type: Opaque
 stringData:
   influxdb-token: "${INFLUXDB_TOKEN}"
+  influxdb-admin-password: "${INFLUXDB_ADMIN_PASSWORD}"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: waf-clickhouse-secrets
+  namespace: waf-data
+type: Opaque
+stringData:
+  clickhouse-password: "${CLICKHOUSE_PASSWORD}"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: waf-clickhouse-secrets
+  namespace: waf-processing
+type: Opaque
+stringData:
+  clickhouse-password: "${CLICKHOUSE_PASSWORD}"
 
 ---
 apiVersion: v1

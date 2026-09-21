@@ -98,6 +98,7 @@ metadata:
 type: Opaque
 stringData:
   influxdb-token: "\${INFLUXDB_TOKEN}"
+  influxdb-admin-password: "\${INFLUXDB_ADMIN_PASSWORD}"
 
 YAML
 }
@@ -116,6 +117,22 @@ stringData:
   google-client-secret: "${GOOGLE_CLIENT_SECRET}"
   jwt-secret: "${JWT_SECRET}"
   nextauth-secret: "${NEXTAUTH_SECRET}"
+
+YAML
+}
+
+emit_clickhouse_secret() {
+  local namespace="$1"
+  cat <<YAML
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: waf-clickhouse-secrets
+  namespace: ${namespace}
+type: Opaque
+stringData:
+  clickhouse-password: "\${CLICKHOUSE_PASSWORD}"
 
 YAML
 }
@@ -197,6 +214,8 @@ YAML
   emit_influxdb_secret "waf-data"
   emit_influxdb_secret "waf-system"
   emit_influxdb_secret "waf-processing"
+  emit_clickhouse_secret "waf-data"
+  emit_clickhouse_secret "waf-processing"
   emit_auth_secret
 
   cat <<'YAML'
