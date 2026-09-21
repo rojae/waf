@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,8 +25,12 @@ public class DashboardController {
     public ResponseEntity<MetricsDto> getMetrics() {
         log.info("GET /api/dashboard/metrics");
         
-        MetricsDto metrics = metricsRepository.getMetrics();
-        return ResponseEntity.ok(metrics);
+        try {
+            MetricsDto metrics = metricsRepository.getMetrics();
+            return ResponseEntity.ok(metrics);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
     }
     
     @GetMapping("/test-influx")
@@ -71,8 +76,11 @@ public class DashboardController {
                 page, size, severity, attackType, clientIp);
         
         var pageRequest = PageRequest.of(page, size);
-        Page<WafLogDto> logs = logRepository.findWafLogs(pageRequest, severity, attackType, clientIp);
-        
-        return ResponseEntity.ok(logs);
+        try {
+            Page<WafLogDto> logs = logRepository.findWafLogs(pageRequest, severity, attackType, clientIp);
+            return ResponseEntity.ok(logs);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
     }
 }

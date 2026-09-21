@@ -6,8 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,18 +33,7 @@ public class AlertService {
             var queryApi = influxDBClient.getQueryApi();
             
             // Query for recent blocked requests (last 1 hour)
-            String alertQuery = """
-                from(bucket: "%s")
-                  |> range(start: -1h)
-                  |> filter(fn: (r) => r["_measurement"] == "waf_requests")
-                  |> filter(fn: (r) => r["blocked"] == "true")
-                  |> filter(fn: (r) => r["severity"] != "LOW")
-                  |> group(columns: ["client_ip", "attack_type", "severity"])
-                  |> count()
-                  |> filter(fn: (r) => r["_value"] >= 3)
-                  |> sort(columns: ["_time"], desc: true)
-                  |> limit(n: 10)
-            """.formatted(influxBucket);
+            String alertQuery = recentAlertsQuery();
 
             var result = queryApi.query(alertQuery, influxOrg);
             
@@ -70,9 +57,7 @@ public class AlertService {
                             "id", String.valueOf(alertId++),
                             "severity", severity,
                             "message", message,
-                            "timestamp", record.getTime() != null ? 
-                                LocalDateTime.parse(record.getTime().toString().substring(0, 19)) :
-                                LocalDateTime.now().minusMinutes((long) (Math.random() * 60)),
+                            "timestamp", record.getTime(),
                             "count", count,
                             "clientIp", clientIp,
                             "attackType", attackType
@@ -81,16 +66,11 @@ public class AlertService {
                 }
             }
             
-            // If no real alerts, return some fallback data
-            if (alerts.isEmpty()) {
-                return createFallbackAlerts();
-            }
-            
             return alerts;
             
         } catch (Exception e) {
             log.error("Error querying recent alerts from InfluxDB", e);
-            return createFallbackAlerts();
+            throw new IllegalStateException("alert_sink_unavailable", e);
         }
     }
 
@@ -104,35 +84,20 @@ public class AlertService {
         }
     }
 
-    private List<Map<String, Object>> createFallbackAlerts() {
-        return List.of(
-            Map.of(
-                "id", "1",
-                "severity", "HIGH", 
-                "message", "Multiple SQL injection attempts from 192.168.1.100",
-                "timestamp", LocalDateTime.now().minusMinutes(2),
-                "count", 5,
-                "clientIp", "192.168.1.100",
-                "attackType", "SQL Injection"
-            ),
-            Map.of(
-                "id", "2",
-                "severity", "MEDIUM",
-                "message", "XSS attempt blocked from 10.0.0.50", 
-                "timestamp", LocalDateTime.now().minusMinutes(5),
-                "count", 1,
-                "clientIp", "10.0.0.50",
-                "attackType", "XSS"
-            ),
-            Map.of(
-                "id", "3",
-                "severity", "HIGH",
-                "message", "Path traversal attempts from 203.0.113.25",
-                "timestamp", LocalDateTime.now().minusMinutes(10),
-                "count", 3,
-                "clientIp", "203.0.113.25",
-                "attackType", "Path Traversal"
-            )
-        );
+    String recentAlertsQuery() {
+        return """
+            from(bucket: "%s")
+              |> range(start: -1h)
+              |> filter(fn: (r) => r["_measurement"] == "waf_requests")
+              |> filter(fn: (r) => r["blocked"] == "true")
+              |> filter(fn: (r) => r["_field"] == "count")
+              |> filter(fn: (r) => r["severity"] != "low")
+              |> group(columns: ["client_ip", "attack_type", "severity"])
+              |> sum()
+              |> filter(fn: (r) => r["_value"] >= 3)
+              |> group()
+              |> sort(columns: ["_value"], desc: true)
+              |> limit(n: 10)
+        """.formatted(influxBucket);
     }
 }
