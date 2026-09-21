@@ -206,6 +206,37 @@ test('SSE proxy forwards auth cookies and preserves upstream 401', async () => {
   assert.equal(calls[0].init.headers.get('Cookie'), 'WAF_AT=token')
 })
 
+test('alerts stream route uses the shared authenticated SSE proxy', () => {
+  const source = read('src/app/api/alerts/stream/route.ts')
+
+  assert.match(source, /proxyEventStream\(request, 'dashboard', '\/api\/alerts\/stream'\)/)
+  assert.doesNotMatch(source, /Access-Control-Allow-Origin/)
+  assert.doesNotMatch(source, /ENV\.DASHBOARD_API_URL/)
+})
+
+test('ApiClient treats 204 and empty successful bodies as successful void responses', async () => {
+  const { ApiClient } = loadTsModule('src/lib/api.ts')
+  const client = new ApiClient()
+  const calls = []
+
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init })
+    return new Response(null, { status: 204, statusText: 'No Content' })
+  }
+
+  await assert.doesNotReject(() => client.deleteRule('42'))
+  assert.equal(calls[0].url, '/api/rules/42')
+  assert.equal(calls[0].init.method, 'DELETE')
+
+  globalThis.fetch = async () => new Response('', {
+    status: 200,
+    statusText: 'OK',
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+  await assert.doesNotReject(() => client.deleteWhitelistEntry('7'))
+})
+
 test('JSON proxy returns null body for upstream 204', async () => {
   const { proxyJson } = loadTsModule('src/lib/server/proxy.ts', {
     'next/server': { NextResponse: MockNextResponse },
@@ -225,6 +256,24 @@ test('JSON proxy returns null body for upstream 204', async () => {
 
   assert.equal(response.status, 204)
   assert.equal(await response.text(), '')
+})
+
+test('whitelist page presents whitelist records as stored drafts only', () => {
+  const source = read('src/app/dashboard/whitelist/page.tsx')
+
+  assert.match(source, /Whitelist Drafts/)
+  assert.match(source, /Draft enabled/)
+  assert.match(source, /Draft disabled/)
+  assert.match(source, /not applied to nginx/)
+  assert.doesNotMatch(source, /bypass WAF filtering/)
+  assert.doesNotMatch(source, />Active</)
+})
+
+test('legacy custom-rules path redirects to canonical dashboard route without demo data', () => {
+  const source = read('src/app/custom-rules/page.tsx')
+
+  assert.match(source, /redirect\('\/dashboard\/custom-rules'\)/)
+  assert.doesNotMatch(source, /SQL Injection Protection|XSS Protection|useState/)
 })
 
 test('OAuth callback rejects state mismatch without setting WAF_AT', async () => {

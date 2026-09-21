@@ -15,7 +15,16 @@ export class ApiClient {
       throw new Error(`API Error: ${response.statusText}`)
     }
 
-    return response.json()
+    if (response.status === 204 || response.status === 205) {
+      return undefined as T
+    }
+
+    const body = await response.text()
+    if (!body) {
+      return undefined as T
+    }
+
+    return JSON.parse(body) as T
   }
 
   // Dashboard APIs (now proxied through frontend API routes)
