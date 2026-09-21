@@ -79,12 +79,23 @@ def pod_namespaces_and_refs(manifest_paths: list[str], ref_kind: str) -> list[tu
     return refs
 
 
+
+def container_block(manifest: str, container_name: str) -> str:
+    match = re.search(rf"      - name: {re.escape(container_name)}\n.*?(?=\n      - name: |\n---\n|\Z)", manifest, flags=re.S)
+    if not match:
+        fail(f"container block not found: {container_name}")
+    return match.group(0)
+
+def env_names(block: str) -> list[str]:
+    return re.findall(r"^        - name: ([A-Z0-9_]+)\s*$", block, flags=re.MULTILINE)
+
 def rendered_configmaps_only() -> str:
     env = os.environ.copy()
     env.update(
         {
             "DOMAIN": "http://localhost:3001",
             "COOKIE_DOMAIN": "localhost",
+            "COOKIE_SECURE": "false",
             "GOOGLE_OAUTH_REDIRECT_URI": "http://localhost:3001/login/oauth2/code/google",
             "OAUTH_CALLBACK_BASE_URL": "http://localhost:3001",
             "OAUTH_DEFAULT_REDIRECT_URL": "http://localhost:3001",
@@ -102,7 +113,7 @@ def rendered_configmaps_only() -> str:
     result = subprocess.run(
         [
             "envsubst",
-            "${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${INFLUXDB_ADMIN_PASSWORD} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET} ${CLICKHOUSE_PASSWORD}",
+            "${DOMAIN} ${COOKIE_DOMAIN} ${COOKIE_SECURE} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${INFLUXDB_ADMIN_PASSWORD} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET} ${CLICKHOUSE_PASSWORD}",
         ],
         cwd=ROOT,
         env=env,
@@ -126,14 +137,23 @@ def test_compose_contracts() -> None:
     assert_contains(override, "context: ./backend", "dashboard build")
     assert_contains(override, "target: dashboard-api", "dashboard build")
     assert_contains(override, "target: social-api", "social build")
-    assert_contains(override, "JWT_SECRET=${JWT_SECRET", "social auth secret")
+    assert_contains(override, "JWT_SECRET=${JWT_SECRET", "shared auth secret")
+    assert_contains(override, "CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3001}", "compose CORS origin")
+    assert_contains(override, "COOKIE_SECURE=${COOKIE_SECURE:-false}", "compose cookie secure")
     assert_contains(override, "WAF_MANAGEMENT_STORE=/app/data/management.json", "dashboard management store")
     assert_contains(override, "waf-management-data:/app/data", "dashboard management volume")
+    backend_dockerfile = read("backend/Dockerfile")
+    assert_contains(backend_dockerfile, "mkdir -p /app/custom-rules /app/modsecurity-rules /app/data", "dashboard data dir image path")
+    assert_contains(backend_dockerfile, "addgroup -g 10001 -S spring", "stable spring gid")
+    assert_contains(backend_dockerfile, "adduser -u 10001 -S spring -G spring spring", "stable spring uid")
+    assert_contains(backend_dockerfile, "chown -R spring:spring /app", "spring owns app runtime dirs")
     assert_contains(compose, "fluent-bit-state:/var/lib/fluent-bit", "fluent-bit durable state volume")
     assert_contains(compose, "kafka-clickhouse-consumer:", "compose Kafka ClickHouse consumer")
     assert_contains(compose, "context: ./kafka-clickhouse-consumer", "consumer build context")
     assert_contains(compose, "CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-waf_analytics}", "consumer database env")
     assert_contains(compose, "CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}", "consumer clickhouse port")
+    assert_contains(compose, "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_TOKEN}", "compose InfluxDB setup token")
+    assert_contains(compose, "--path.config", "compose Logstash pipeline path")
 
     env = os.environ.copy()
     env.update(
@@ -155,6 +175,8 @@ def test_compose_contracts() -> None:
             "CLICKHOUSE_DATABASE": "waf_analytics",
             "CLICKHOUSE_PORT": "9000",
             "KAFKA_BOOTSTRAP_SERVERS": "kafka:9092",
+            "CORS_ALLOWED_ORIGINS": "http://localhost:3001",
+            "COOKIE_SECURE": "false",
         }
     )
     result = subprocess.run(
@@ -193,6 +215,20 @@ def test_startup_contracts() -> None:
     assert_not_contains(startup, "kubectl wait --for=condition=ready pod -l app=elasticsearch -n waf-data --timeout=300s || true", "masked elasticsearch readiness")
     assert_not_contains(startup, "print_success \"All pods are ready\"", "unconditional readiness success")
 
+
+
+def test_local_startup_contracts() -> None:
+    startup = read("startup.sh")
+    assert_contains(startup, "compose_up topics-init", "startup topics job")
+    assert_contains(startup, "wait_job_success topics-init", "startup topics readiness")
+    assert_contains(startup, "compose_up ksqldb-cli-init", "startup ksql job")
+    assert_contains(startup, "wait_job_success ksqldb-cli-init", "startup ksql readiness")
+    assert_contains(startup, "kafka-clickhouse-consumer", "startup consumer")
+    assert_not_contains(startup, "sh ./kafka/ensure-topics.sh", "startup manual topic script")
+    assert_not_contains(startup, "sleep 30", "startup fixed core sleep")
+    assert_not_contains(startup, "Redis Streams", "startup stale Redis architecture")
+    assert_not_contains(startup, "admin/admin", "startup hardcoded Grafana credential")
+    assert_not_contains(startup, "Started Successfully", "startup false success banner")
 
 def test_nginx_bypass_contracts() -> None:
     nginx_conf = read("nginx/nginx.conf")
@@ -287,13 +323,34 @@ def test_k8s_config_contracts() -> None:
     assert_contains(consumer, "name: waf-clickhouse-secrets", "consumer ClickHouse secret")
     assert_not_contains(consumer, "adminpassword", "consumer plaintext ClickHouse password")
     apps = read("k8s/06-applications.yaml")
+    apps_template = read("k8s/06-applications.yaml.template")
+    dashboard = container_block(apps, "waf-dashboard-api")
+    social = container_block(apps, "waf-social-api")
+    for block, label in [(dashboard, "dashboard"), (social, "social")]:
+        names = env_names(block)
+        for required in ["JWT_SECRET", "CORS_ALLOWED_ORIGINS", "COOKIE_DOMAIN", "COOKIE_SECURE"]:
+            if names.count(required) != 1:
+                fail(f"{label} {required} env count expected 1, got {names.count(required)}")
+    assert_contains(dashboard, "name: waf-auth-secrets\n              key: jwt-secret", "dashboard JWT secret")
     assert_contains(apps, "WAF_MANAGEMENT_STORE", "dashboard management env")
     assert_contains(apps, "claimName: waf-management-data-pvc", "dashboard management pvc")
+    assert_contains(apps, "fsGroup: 10001", "dashboard fsGroup for writable pvc")
+    assert_contains(apps, "runAsUser: 10001", "dashboard runAsUser matches image uid")
+    assert_contains(apps_template, "fsGroup: 10001", "template dashboard fsGroup")
+    assert_contains(apps_template, "name: waf-auth-secrets\n              key: jwt-secret", "template dashboard JWT secret")
+    assert_not_contains(apps, "${COOKIE_SECURE", "unrendered cookie secure literal")
+    assert_not_contains(apps_template, "${COOKIE_SECURE", "template unrendered cookie secure literal")
+    assert_not_contains(apps_template, "hostPath:", "template hostPath drift")
+    data_stores = read("k8s/04-data-stores.yaml")
+    monitoring = read("k8s/07-monitoring.yaml")
+    assert_contains(data_stores, "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN", "k8s InfluxDB setup token")
+    assert_contains(monitoring, "--path.config", "k8s Logstash pipeline path")
 
 
 def main() -> None:
     test_compose_contracts()
     test_startup_contracts()
+    test_local_startup_contracts()
     test_nginx_bypass_contracts()
     test_deploy_script_contracts()
     test_k8s_config_contracts()

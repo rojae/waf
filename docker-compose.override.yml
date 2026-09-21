@@ -19,6 +19,10 @@ services:
       - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
       - GRAFANA_URL=http://grafana:3000
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - WAF_MANAGEMENT_STORE=/app/data/management.json
     volumes:
       - custom-rules-volume:/app/custom-rules
@@ -45,7 +49,9 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - JWT_SECRET=${JWT_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
       - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:3001/login/oauth2/code/google}
       - OAUTH_CALLBACK_BASE_URL=${OAUTH_CALLBACK_BASE_URL:-http://localhost:3001}
       - OAUTH_DEFAULT_REDIRECT_URL=${OAUTH_DEFAULT_REDIRECT_URL:-http://localhost:3001}

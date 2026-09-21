@@ -253,6 +253,8 @@ spec:
           value: "0.0.0.0"  # HTTP API 바인드 (기본값이지만 명시)
         args:
           - "--http.host=$(LOGSTASH_INTERNAL_HTTP_HOST)"
+          - "--path.config"
+          - "/usr/share/logstash/pipeline/pipeline.conf"
         volumeMounts:
         - name: pipeline
           mountPath: /usr/share/logstash/pipeline
