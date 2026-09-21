@@ -9,15 +9,19 @@ import json
 import logging
 import signal
 import sys
-from datetime import datetime
+from collections import namedtuple
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import time
 import ipaddress
 
 try:
     from kafka import KafkaConsumer
+    from kafka.structs import OffsetAndMetadata, TopicPartition
 except ImportError:  # pragma: no cover - exercised in minimal test envs
     KafkaConsumer = None
+    TopicPartition = namedtuple("TopicPartition", ["topic", "partition"])
+    OffsetAndMetadata = namedtuple("OffsetAndMetadata", ["offset", "metadata"])
 
 try:
     from clickhouse_driver import Client
@@ -54,6 +58,7 @@ CLICKHOUSE_DATABASE = os.getenv('CLICKHOUSE_DATABASE', 'waf_analytics')
 
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', '100'))
 BATCH_TIMEOUT = int(os.getenv('BATCH_TIMEOUT', '5'))  # seconds
+POLL_TIMEOUT_MS = int(os.getenv('POLL_TIMEOUT_MS', '1000'))
 
 # GeoIP Database (optional)
 GEOIP_DB_PATH = os.getenv('GEOIP_DB_PATH', '/usr/share/GeoIP/GeoLite2-City.mmdb')
@@ -92,7 +97,6 @@ class KafkaClickHouseConsumer:
             auto_offset_reset='latest',  # Start from latest messages
             enable_auto_commit=False,
             value_deserializer=lambda x: json.loads(x.decode('utf-8')) if x else None
-            # No consumer_timeout_ms - wait indefinitely for messages
         )
         logger.info("✓ Kafka consumer initialized")
 
@@ -236,11 +240,6 @@ class KafkaClickHouseConsumer:
     def parse_waf_event(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Parse WAF event from Kafka message"""
         try:
-            # Log the message structure for debugging (first message only)
-            if not hasattr(self, '_logged_sample'):
-                logger.info(f"Sample Kafka message structure: {json.dumps(message, indent=2)[:500]}")
-                self._logged_sample = True
-
             # Extract fields from ModSecurity audit log
             transaction = message.get('transaction', {})
             request = transaction.get('request', {})
@@ -249,21 +248,10 @@ class KafkaClickHouseConsumer:
 
             # Parse timestamp
             timestamp_str = transaction.get('time_stamp')
-            if timestamp_str:
-                # Convert "25/Oct/2025:21:30:45 +0900" to datetime
-                try:
-                    timestamp = datetime.strptime(timestamp_str.split(' ')[0], '%d/%b/%Y:%H:%M:%S')
-                except:
-                    timestamp = datetime.now()
-            else:
-                timestamp = datetime.now()
+            timestamp = self.parse_event_timestamp(timestamp_str)
 
             # Get client IP
             client_ip = transaction.get('client_ip', '0.0.0.0')
-            if client_ip == '0.0.0.0':
-                # Try to get from headers
-                headers = request.get('headers', {})
-                client_ip = headers.get('X-Real-IP', headers.get('X-Forwarded-For', '0.0.0.0')).split(',')[0].strip()
 
             # Get GeoIP information
             geoip_info = self.get_geoip_info(client_ip)
@@ -367,6 +355,64 @@ class KafkaClickHouseConsumer:
             logger.debug(f"Message: {message}")
             return None
 
+    def parse_event_timestamp(self, timestamp_str: Optional[str]) -> datetime:
+        """Parse ModSecurity timestamps and normalize to UTC without dropping offsets."""
+        if not timestamp_str:
+            return datetime.now(timezone.utc).replace(tzinfo=None)
+
+        candidates = [
+            ("%d/%b/%Y:%H:%M:%S %z", timestamp_str),
+            ("%Y-%m-%dT%H:%M:%S.%f%z", timestamp_str.replace("Z", "+0000")),
+            ("%Y-%m-%dT%H:%M:%S%z", timestamp_str.replace("Z", "+0000")),
+            ("%Y-%m-%d %H:%M:%S", timestamp_str),
+        ]
+        for layout, value in candidates:
+            try:
+                parsed = datetime.strptime(value, layout)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            except ValueError:
+                continue
+
+        try:
+            parsed = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        except ValueError:
+            logger.warning("Failed to parse event timestamp; using current UTC time")
+            return datetime.now(timezone.utc).replace(tzinfo=None)
+
+    def build_commit_offsets(self) -> Dict[Any, Any]:
+        offsets = {}
+        for message in self.batch_messages:
+            topic = getattr(message, 'topic', None)
+            partition = getattr(message, 'partition', None)
+            offset = getattr(message, 'offset', None)
+            if topic is None or partition is None or offset is None:
+                continue
+
+            tp = TopicPartition(topic, partition)
+            next_offset = int(offset) + 1
+            current = offsets.get(tp)
+            if current is None or next_offset > current.offset:
+                offsets[tp] = OffsetAndMetadata(next_offset, None)
+        return offsets
+
+    def commit_batch_offsets(self) -> bool:
+        if not self.consumer or not self.batch_messages:
+            return True
+
+        offsets = self.build_commit_offsets()
+        if not offsets:
+            logger.error("No explicit Kafka offsets available for inserted batch; retaining batch")
+            return False
+
+        self.consumer.commit(offsets=offsets)
+        logger.info(f"✓ Kafka offsets committed after durable ClickHouse insert: {offsets}")
+        return True
+
     def insert_batch(self) -> bool:
         """Insert batch of events to ClickHouse"""
         if not self.batch:
@@ -428,9 +474,8 @@ class KafkaClickHouseConsumer:
             )
 
             logger.info(f"✓ Inserted {len(self.batch)} events to ClickHouse")
-            if self.consumer:
-                self.consumer.commit()
-                logger.info("✓ Kafka offsets committed after durable ClickHouse insert")
+            if not self.commit_batch_offsets():
+                return False
             self.batch = []
             self.batch_messages = []
             self.last_insert_time = time.time()
@@ -480,35 +525,53 @@ class KafkaClickHouseConsumer:
         logger.info(f"Batch size: {BATCH_SIZE}, Timeout: {BATCH_TIMEOUT}s")
         logger.info("Press Ctrl+C to stop")
 
+        failed = False
         try:
             message_count = 0
-            for message in self.consumer:
-                if not self.running:
-                    break
+            while self.running:
+                polled = self.consumer.poll(timeout_ms=POLL_TIMEOUT_MS, max_records=BATCH_SIZE)
+                if not polled:
+                    if self.batch and (time.time() - self.last_insert_time) >= BATCH_TIMEOUT:
+                        if not self.insert_batch():
+                            logger.error("Stopping consumer to avoid advancing past failed ClickHouse batch")
+                            failed = True
+                            break
+                    continue
 
-                if not self.process_message(message):
-                    logger.error("Stopping consumer to avoid advancing past failed ClickHouse batch")
-                    break
-                message_count += 1
+                for messages in polled.values():
+                    for message in messages:
+                        if not self.running:
+                            break
+                        if not self.process_message(message):
+                            logger.error("Stopping consumer to avoid advancing past failed ClickHouse batch")
+                            failed = True
+                            self.running = False
+                            break
+                        message_count += 1
 
-                if message_count % 100 == 0:
-                    logger.info(f"Processed {message_count} messages")
+                        if message_count % 100 == 0:
+                            logger.info(f"Processed {message_count} messages")
+                    if not self.running:
+                        break
 
         except KeyboardInterrupt:
             logger.info("Received shutdown signal")
         finally:
-            self.shutdown()
+            shutdown_ok = self.shutdown()
+        return not failed and shutdown_ok
 
-    def shutdown(self):
+    def shutdown(self) -> bool:
         """Graceful shutdown"""
         logger.info("Shutting down consumer...")
         self.running = False
+        ok = True
 
         # Insert remaining batch
         if self.batch:
             logger.info("Inserting remaining batch...")
             if not self.insert_batch():
                 logger.error("Shutdown left Kafka offsets uncommitted for retained failed batch")
+                ok = False
 
         # Close connections
         if self.consumer:
@@ -520,6 +583,7 @@ class KafkaClickHouseConsumer:
             logger.info("✓ ClickHouse client disconnected")
 
         logger.info("Consumer stopped")
+        return ok
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
@@ -533,4 +597,5 @@ if __name__ == '__main__':
 
     # Run consumer
     consumer = KafkaClickHouseConsumer()
-    consumer.run()
+    if not consumer.run():
+        sys.exit(1)
