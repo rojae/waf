@@ -221,6 +221,9 @@ def test_local_startup_contracts() -> None:
     startup = read("startup.sh")
     assert_contains(startup, "compose_up topics-init", "startup topics job")
     assert_contains(startup, "wait_job_success topics-init", "startup topics readiness")
+    job_wait = startup[startup.index("wait_job_success()") : startup.index("compose_up()", startup.index("wait_job_success()"))]
+    assert_contains(job_wait, 'docker compose ps -a -q "$service"', "startup finds exited compose jobs")
+    assert_not_contains(job_wait, 'container_id=$(docker compose ps -q "$service"', "startup job wait excludes stopped jobs")
     assert_contains(startup, "compose_up ksqldb-cli-init", "startup ksql job")
     assert_contains(startup, "wait_job_success ksqldb-cli-init", "startup ksql readiness")
     assert_contains(startup, "kafka-clickhouse-consumer", "startup consumer")
@@ -345,6 +348,9 @@ def test_k8s_config_contracts() -> None:
     monitoring = read("k8s/07-monitoring.yaml")
     assert_contains(data_stores, "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN", "k8s InfluxDB setup token")
     assert_contains(monitoring, "--path.config", "k8s Logstash pipeline path")
+    logstash = container_block(monitoring, "logstash")
+    assert_contains(logstash, "name: ELASTICSEARCH_HOSTS\n          value: \"http://elasticsearch.waf-data.svc.cluster.local:9200\"", "Logstash ES host env")
+    assert_contains(logstash, "name: KAFKA_BOOTSTRAP_SERVERS\n          value: \"kafka.waf-processing.svc.cluster.local:9092\"", "Logstash Kafka env")
 
 
 def main() -> None:

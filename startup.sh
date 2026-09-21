@@ -101,7 +101,7 @@ wait_job_success() {
     local exit_code=""
 
     while [ "$elapsed" -lt "$timeout_seconds" ]; do
-        container_id=$(docker compose ps -q "$service" 2>/dev/null || true)
+        container_id=$(docker compose ps -a -q "$service" 2>/dev/null || true)
         if [ -n "$container_id" ]; then
             status=$(docker inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)
             exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$container_id" 2>/dev/null || true)

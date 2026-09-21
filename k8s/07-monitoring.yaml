@@ -251,6 +251,10 @@ spec:
           value: "-Xms512m -Xmx512m"
         - name: LOGSTASH_INTERNAL_HTTP_HOST
           value: "0.0.0.0"  # HTTP API 바인드 (기본값이지만 명시)
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch.waf-data.svc.cluster.local:9200"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka.waf-processing.svc.cluster.local:9092"
         args:
           - "--http.host=$(LOGSTASH_INTERNAL_HTTP_HOST)"
           - "--path.config"
