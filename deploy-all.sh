@@ -115,22 +115,18 @@ esac
 # .local 파일이 있는지 확인하고, 없으면 템플릿에서 생성
 echo "🔧 배포용 manifest 파일 준비 중..."
 
-# secrets 파일 처리
-if [ ! -f "k8s/02-configmaps-secrets.yaml.local" ] || [ "$FORCE_RECREATE" = true ]; then
+CONFIG_ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET}'
+
+# generated configmaps/secrets 파일 처리
+if [ ! -f "k8s/02-configmaps-only.yaml.local" ] || [ "$FORCE_RECREATE" = true ]; then
     if [ "$FORCE_RECREATE" = true ]; then
-        echo "📝 강제 재생성: secrets 파일 생성 중..."
+        echo "📝 강제 재생성: generated configmaps/secrets 파일 생성 중..."
     else
-        echo "📝 환경변수를 사용하여 secrets 파일 생성 중..."
+        echo "📝 환경변수를 사용하여 generated configmaps/secrets 파일 생성 중..."
     fi
 
-    # Base64 인코딩이 필요한 값들 처리
-    GOOGLE_CLIENT_ID_BASE64=$(echo -n "$GOOGLE_CLIENT_ID" | base64)
-    GOOGLE_CLIENT_SECRET_BASE64=$(echo -n "$GOOGLE_CLIENT_SECRET" | base64)
-    JWT_SECRET_BASE64=$(echo -n "$JWT_SECRET" | base64)
-    NEXTAUTH_SECRET_BASE64=$(echo -n "$NEXTAUTH_SECRET" | base64)
-
-    # 템플릿 파일에서 환경변수 치환
-    envsubst < k8s/02-configmaps-secrets.yaml > k8s/02-configmaps-secrets.yaml.local
+    ./scripts/generate-k8s-configmaps.sh
+    envsubst "$CONFIG_ENVSUBST_VARS" < k8s/02-configmaps-only.yaml > k8s/02-configmaps-only.yaml.local
 fi
 
 # applications 파일 처리
@@ -147,7 +143,7 @@ fi
 echo "📦 Kubernetes 리소스 배포 중..."
 kubectl apply -f k8s/00-namespaces.yaml
 kubectl apply -f k8s/01-storage.yaml
-kubectl apply -f k8s/02-configmaps-secrets.yaml.local
+kubectl apply -f k8s/02-configmaps-only.yaml.local
 kubectl apply -f k8s/03-nginx-waf.yaml
 kubectl apply -f k8s/04-data-stores.yaml
 kubectl apply -f k8s/05-processing-services.yaml

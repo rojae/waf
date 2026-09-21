@@ -140,8 +140,8 @@ spec:
           value: "7d"
         - name: INFLUXDB_TOKEN
           valueFrom:
-            configMapKeyRef:
-              name: influxdb-config
+            secretKeyRef:
+              name: waf-influxdb-secrets
               key: influxdb-token
         volumeMounts:
         - name: influxdb-data
@@ -254,9 +254,8 @@ spec:
         persistentVolumeClaim:
           claimName: waf-clickhouse-pvc
       - name: clickhouse-init
-        hostPath:
-          path: /Users/jaeseoh/Documents/workspace/waf/clickhouse/init.sql
-          type: File
+        configMap:
+          name: clickhouse-initdb
 
 ---
 # ClickHouse Service

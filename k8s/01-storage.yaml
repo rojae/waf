@@ -74,6 +74,36 @@ spec:
 apiVersion: v1
 kind: PersistentVolume
 metadata:
+  name: waf-fluent-bit-state-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/fluent-bit
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: waf-management-data-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /var/lib/waf/management
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
   name: waf-grafana-pv
 spec:
   capacity:
@@ -171,6 +201,34 @@ spec:
   resources:
     requests:
       storage: 20Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-fluent-bit-state-pvc
+  namespace: waf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: local-storage
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: waf-management-data-pvc
+  namespace: waf-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
   storageClassName: local-storage
 
 ---

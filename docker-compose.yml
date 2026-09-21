@@ -3,7 +3,9 @@ version: "3.8"
 services:
   # Nginx + ModSecurity
   nginx:
-    build: .
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: waf-nginx
     ports:
       - "8080:80"
@@ -180,6 +182,7 @@ services:
       - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
       - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
       - ./fluent-bit/waf_classifier.lua:/fluent-bit/etc/waf_classifier.lua:ro
+      - fluent-bit-state:/var/lib/fluent-bit
     command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:2020/api/v1/health"]
@@ -286,3 +289,4 @@ volumes:
   grafana-data:
   es-data:
   custom-rules-volume:
+  fluent-bit-state:
