@@ -123,6 +123,7 @@ class KafkaClickHouseConsumerTests(unittest.TestCase):
         self.assertTrue(consumer.insert_batch())
         self.assertEqual(consumer.batch, [])
         self.assertEqual(consumer.batch_messages, [])
+        self.assertFalse(consumer.batch_inserted_pending_commit)
         self.assertEqual(len(consumer.consumer.commits), 1)
         offsets = consumer.consumer.commits[0]
         self.assertEqual(len(offsets), 1)
@@ -138,6 +139,38 @@ class KafkaClickHouseConsumerTests(unittest.TestCase):
         self.assertFalse(consumer.insert_batch())
         self.assertEqual(len(consumer.batch), 1)
         self.assertEqual(len(consumer.batch_messages), 1)
+        self.assertTrue(consumer.batch_inserted_pending_commit)
+
+    def test_pending_commit_retry_does_not_reinsert_batch(self):
+        consumer = consumer_module.KafkaClickHouseConsumer()
+        clickhouse = FakeClickHouse()
+        kafka = FakeConsumer(fail_commit=True)
+        consumer.clickhouse_client = clickhouse
+        consumer.consumer = kafka
+        consumer.batch = [self.sample_event()]
+        consumer.batch_messages = [FakeMessage(10)]
+
+        self.assertFalse(consumer.insert_batch())
+        self.assertEqual(len(clickhouse.executed), 1)
+
+        kafka.fail_commit = False
+        self.assertTrue(consumer.insert_batch())
+        self.assertEqual(len(clickhouse.executed), 1)
+        self.assertEqual(consumer.batch, [])
+        self.assertFalse(consumer.batch_inserted_pending_commit)
+
+    def test_shutdown_after_commit_failure_does_not_reinsert(self):
+        consumer = consumer_module.KafkaClickHouseConsumer()
+        clickhouse = FakeClickHouse()
+        consumer.clickhouse_client = clickhouse
+        consumer.consumer = FakeConsumer(fail_commit=True)
+        consumer.batch = [self.sample_event()]
+        consumer.batch_messages = [FakeMessage(10)]
+
+        self.assertFalse(consumer.insert_batch())
+        self.assertFalse(consumer.shutdown())
+        self.assertEqual(len(clickhouse.executed), 1)
+        self.assertTrue(consumer.batch_inserted_pending_commit)
 
     def test_preflush_commits_only_stored_batch_not_current_polled_message(self):
         consumer = consumer_module.KafkaClickHouseConsumer()

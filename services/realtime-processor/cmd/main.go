@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/influxdata/influxdb-client-go/v2/api"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
@@ -90,12 +91,16 @@ type eventSink interface {
 	WriteEvent(context.Context, ModSecurityEvent, int) error
 }
 
+type influxPointWriter interface {
+	WritePoint(context.Context, ...*write.Point) error
+}
+
 // ===== Processor =====
 type RealTimeProcessor struct {
 	config       Config
 	kafkaReader  kafkaMessageReader
 	influxClient influxdb2.Client
-	writeBlk     api.WriteAPIBlocking
+	writeBlk     influxPointWriter
 	sink         eventSink
 	retryBackoff time.Duration
 	logger       *logrus.Logger
@@ -195,7 +200,7 @@ func (rtp *RealTimeProcessor) processFetchedMessage(ctx context.Context, m kafka
 		return rtp.kafkaReader.CommitMessages(ctx, m)
 	}
 
-	rtp.normalizeEvent(&event, m.Time)
+	rtp.normalizeEvent(&event, m)
 	severity := rtp.calculateSeverity(event)
 	if err := rtp.writeEventWithRetry(ctx, event, severity); err != nil {
 		return err
@@ -283,25 +288,14 @@ func (rtp *RealTimeProcessor) calculateSeverity(event ModSecurityEvent) int {
 			severity += 20
 		}
 	}
-	if rtp.isHighRiskIP(event.Transaction.ClientIP) {
-		severity += 15
-	}
 	return severity
-}
-
-func (rtp *RealTimeProcessor) isHighRiskIP(ip string) bool {
-	for _, riskIP := range []string{"192.168.1.100", "10.0.0.50"} {
-		if ip == riskIP {
-			return true
-		}
-	}
-	return false
 }
 
 // ===== Influx write =====
 func (rtp *RealTimeProcessor) WriteEvent(ctx context.Context, event ModSecurityEvent, severity int) error {
 	geoInfo := rtp.lookupGeoIP(event.Transaction.ClientIP)
 	ruleID := effectiveRuleID(event)
+	eventID := eventID(event)
 	blocked := rtp.determineBlocked(event)
 	attackType := rtp.mapAttackType(ruleID)
 	ts := rtp.parseEventTime(event)
@@ -309,6 +303,7 @@ func (rtp *RealTimeProcessor) WriteEvent(ctx context.Context, event ModSecurityE
 	// 1) legacy: waf_events. It is written through the blocking API so the
 	// Kafka offset is not committed before this required measurement is durable.
 	pLegacy := influxdb2.NewPointWithMeasurement("waf_events").
+		AddTag("event_id", eventID).
 		AddTag("client_ip", event.Transaction.ClientIP).
 		AddTag("method", event.Transaction.Request.Method).
 		AddTag("rule_id", ruleID).
@@ -329,6 +324,7 @@ func (rtp *RealTimeProcessor) WriteEvent(ctx context.Context, event ModSecurityE
 	// 2) new: waf_requests (blocking)
 	if rtp.config.DualWrite {
 		pRequests := influxdb2.NewPointWithMeasurement("waf_requests").
+			AddTag("event_id", eventID).
 			AddTag("client_ip", event.Transaction.ClientIP).
 			AddTag("method", event.Transaction.Request.Method).
 			AddTag("rule_id", ruleID).
@@ -418,11 +414,15 @@ func (rtp *RealTimeProcessor) parseEventTime(event ModSecurityEvent) time.Time {
 	return time.Now()
 }
 
-func (rtp *RealTimeProcessor) normalizeEvent(event *ModSecurityEvent, kafkaTime time.Time) {
+func (rtp *RealTimeProcessor) normalizeEvent(event *ModSecurityEvent, m kafka.Message) {
+	if event.Transaction.ID == "" && event.Transaction.UniqueID == "" {
+		event.Transaction.ID = fmt.Sprintf("kafka-%s-%d-%d", m.Topic, m.Partition, m.Offset)
+	}
 	if event.Classification.RuleID == "" {
 		event.Classification.RuleID = firstMessageRuleID(*event)
 	}
 	if event.Classification.Timestamp == "" && event.Transaction.TimeStamp == "" {
+		kafkaTime := m.Time
 		if kafkaTime.IsZero() {
 			kafkaTime = time.Now()
 		}

@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
 	"time"
 
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
 )
@@ -44,6 +46,15 @@ func (s *fakeSink) WriteEvent(_ context.Context, event ModSecurityEvent, severit
 	if s.calls <= s.failures {
 		return errors.New("sink unavailable")
 	}
+	return nil
+}
+
+type fakePointWriter struct {
+	points []*write.Point
+}
+
+func (w *fakePointWriter) WritePoint(_ context.Context, points ...*write.Point) error {
+	w.points = append(w.points, points...)
 	return nil
 }
 
@@ -138,6 +149,90 @@ func TestBlockedIsNotInferredFromSeverity(t *testing.T) {
 	if !processor.determineBlocked(event) {
 		t.Fatal("HTTP 403 should be treated as blocked response inference")
 	}
+}
+
+func TestWriteEventUsesEventIDToDistinguishSameTimestampEvents(t *testing.T) {
+	writer := &fakePointWriter{}
+	processor := &RealTimeProcessor{
+		config:   Config{DualWrite: true},
+		writeBlk: writer,
+		logger:   logrus.New(),
+	}
+	processor.logger.SetOutput(io.Discard)
+
+	eventA := mustEvent(t, validEventJSON())
+	eventB := mustEvent(t, validEventJSON())
+	eventB.Transaction.ID = "tx-2"
+
+	if err := processor.WriteEvent(context.Background(), eventA, processor.calculateSeverity(eventA)); err != nil {
+		t.Fatalf("WriteEvent eventA returned error: %v", err)
+	}
+	if err := processor.WriteEvent(context.Background(), eventB, processor.calculateSeverity(eventB)); err != nil {
+		t.Fatalf("WriteEvent eventB returned error: %v", err)
+	}
+
+	if len(writer.points) != 4 {
+		t.Fatalf("expected two measurements per event, got %d points", len(writer.points))
+	}
+	if got := pointTag(writer.points[1], "event_id"); got != "tx-1" {
+		t.Fatalf("expected first waf_requests event_id tx-1, got %q", got)
+	}
+	if got := pointTag(writer.points[3], "event_id"); got != "tx-2" {
+		t.Fatalf("expected second waf_requests event_id tx-2, got %q", got)
+	}
+	if !writer.points[1].Time().Equal(writer.points[3].Time()) {
+		t.Fatalf("expected same raw timestamp for both events")
+	}
+}
+
+func TestWriteEventRetryKeepsSameInfluxPointIdentity(t *testing.T) {
+	writer := &fakePointWriter{}
+	processor := &RealTimeProcessor{
+		config:   Config{DualWrite: true},
+		writeBlk: writer,
+		logger:   logrus.New(),
+	}
+	processor.logger.SetOutput(io.Discard)
+	event := mustEvent(t, validEventJSON())
+	severity := processor.calculateSeverity(event)
+
+	if err := processor.WriteEvent(context.Background(), event, severity); err != nil {
+		t.Fatalf("first WriteEvent returned error: %v", err)
+	}
+	if err := processor.WriteEvent(context.Background(), event, severity); err != nil {
+		t.Fatalf("retry WriteEvent returned error: %v", err)
+	}
+
+	if len(writer.points) != 4 {
+		t.Fatalf("expected two dual-write attempts, got %d points", len(writer.points))
+	}
+	first := writer.points[1]
+	retry := writer.points[3]
+	if pointTag(first, "event_id") != pointTag(retry, "event_id") {
+		t.Fatalf("expected retry event_id to stay stable")
+	}
+	if !first.Time().Equal(retry.Time()) {
+		t.Fatalf("expected retry timestamp to stay stable")
+	}
+}
+
+func mustEvent(t *testing.T, raw string) ModSecurityEvent {
+	t.Helper()
+	var event ModSecurityEvent
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	event.Transaction.TimeStamp = "2026-09-22T00:00:00Z"
+	return event
+}
+
+func pointTag(point *write.Point, key string) string {
+	for _, tag := range point.TagList() {
+		if tag.Key == key {
+			return tag.Value
+		}
+	}
+	return ""
 }
 
 func validEventJSON() string {
