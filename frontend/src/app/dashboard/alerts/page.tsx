@@ -47,15 +47,14 @@ export default function AlertsPage() {
   const { loading, isAuthenticated } = useAuthGuard();
   const router = useRouter();
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [streamConnected, setStreamConnected] = useState(false);
+  const [streamUnavailable, setStreamUnavailable] = useState(false);
 
   useEffect(() => {
     if (loading) return;
     if (!isAuthenticated) return; // useAuthGuard가 비로그인 시 /auth/signin 으로 푸시
 
     void loadRecentAlerts();
-    const cleanup = connectToAlertStream();
-    return cleanup;
+    void checkAlertStreamAvailability();
   }, [loading, isAuthenticated]);
 
   const loadRecentAlerts = async () => {
@@ -68,38 +67,22 @@ export default function AlertsPage() {
     }
   };
 
-  const connectToAlertStream = () => {
+  const checkAlertStreamAvailability = async () => {
     try {
-      const eventSource = apiClient.createAlertStream();
+      const response = await fetch('/api/alerts/stream', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
 
-      eventSource.onopen = () => {
-        setStreamConnected(true);
-        toast.success('Connected to real-time alerts');
-      };
+      if (response.status === 501) {
+        setStreamUnavailable(true);
+        return;
+      }
 
-      eventSource.onmessage = (event) => {
-        try {
-          const newAlert: Alert = JSON.parse(event.data);
-          setAlerts((prev) => [newAlert, ...prev.slice(0, 9)]); // 최근 10개 유지
-
-          if (newAlert.severity === 'HIGH' || newAlert.severity === 'CRITICAL') {
-            toast.error(`${newAlert.severity} Alert: ${newAlert.message}`);
-          }
-        } catch (error) {
-          console.error('Error parsing alert data:', error);
-        }
-      };
-
-      eventSource.onerror = () => {
-        setStreamConnected(false);
-        toast.error('Lost connection to alert stream');
-      };
-
-      return () => eventSource.close();
+      setStreamUnavailable(!response.ok);
     } catch (error) {
-      console.error('Error connecting to alert stream:', error);
-      toast.error('Failed to connect to alert stream');
-      return () => {};
+      console.error('Error checking alert stream availability:', error);
+      setStreamUnavailable(true);
     }
   };
 
@@ -174,21 +157,12 @@ export default function AlertsPage() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
             Security Alerts
           </Typography>
-          {streamConnected ? (
-            <Chip
-              icon={<Notifications />}
-              label="Live"
-              color="success"
-              variant="outlined"
-            />
-          ) : (
-            <Chip
-              icon={<NotificationsOff />}
-              label="Disconnected"
-              color="default"
-              variant="outlined"
-            />
-          )}
+          <Chip
+            icon={<NotificationsOff />}
+            label={streamUnavailable ? 'Live alerts unavailable' : 'Recent alerts only'}
+            color="default"
+            variant="outlined"
+          />
         </Toolbar>
       </AppBar>
 
@@ -200,8 +174,16 @@ export default function AlertsPage() {
               Recent Security Events
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-              Latest security alerts and notifications
+              Latest persisted security alerts and notifications
             </Typography>
+            <Paper variant="outlined" sx={{ p: 2, mb: 3, backgroundColor: 'grey.50' }}>
+              <Typography variant="subtitle2" color="text.primary">
+                Live alert stream unavailable
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                The backend does not currently publish live alert events. This page shows the recent alert query only.
+              </Typography>
+            </Paper>
             
             {alerts.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 8 }}>
