@@ -17,6 +17,12 @@ spec:
       labels:
         app: waf-dashboard-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
       initContainers:
       - name: wait-for-elasticsearch
         image: curlimages/curl:8.4.0
@@ -55,8 +61,8 @@ spec:
           value: "http://influxdb.waf-data.svc.cluster.local:8086"
         - name: INFLUXDB_TOKEN
           valueFrom:
-            configMapKeyRef:
-              name: influxdb-config
+            secretKeyRef:
+              name: waf-influxdb-secrets
               key: influxdb-token
         - name: INFLUXDB_ORG
           valueFrom:
@@ -72,15 +78,36 @@ spec:
           value: "http://grafana.waf-monitoring.svc.cluster.local:3000"
         - name: KAFKA_BOOTSTRAP_SERVERS
           value: "kafka.waf-processing.svc.cluster.local:9092"
+        - name: WAF_MANAGEMENT_STORE
+          value: "/app/data/management.json"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: waf-auth-secrets
+              key: jwt-secret
         - name: CORS_ALLOWED_ORIGINS
           valueFrom:
             configMapKeyRef:
               name: waf-config
               key: public-domain
               optional: true
+        - name: COOKIE_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: cookie-domain
+              optional: true
+        - name: COOKIE_SECURE
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: cookie-secure
+              optional: true
         volumeMounts:
         - name: custom-rules
           mountPath: /app/custom-rules
+        - name: management-data
+          mountPath: /app/data
         - name: modsec-rules
           mountPath: /app/modsecurity-rules
           readOnly: true
@@ -108,6 +135,9 @@ spec:
       - name: custom-rules
         persistentVolumeClaim:
           claimName: waf-custom-rules-pvc
+      - name: management-data
+        persistentVolumeClaim:
+          claimName: waf-management-data-pvc
       - name: modsec-rules
         configMap:
           name: modsecurity-rules
@@ -195,11 +225,23 @@ spec:
             secretKeyRef:
               name: waf-auth-secrets
               key: jwt-secret
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: public-domain
+              optional: true
         - name: COOKIE_DOMAIN
           valueFrom:
             configMapKeyRef:
               name: waf-config
               key: cookie-domain
+              optional: true
+        - name: COOKIE_SECURE
+          valueFrom:
+            configMapKeyRef:
+              name: waf-config
+              key: cookie-secure
               optional: true
         - name: GOOGLE_OAUTH_REDIRECT_URI
           valueFrom:
@@ -316,6 +358,11 @@ spec:
             secretKeyRef:
               name: waf-auth-secrets
               key: nextauth-secret
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: waf-auth-secrets
+              key: jwt-secret
         - name: GOOGLE_CLIENT_ID
           valueFrom:
             secretKeyRef:

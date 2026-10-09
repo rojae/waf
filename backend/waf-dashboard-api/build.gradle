@@ -31,6 +31,7 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation("com.influxdb:influxdb-client-java:7.0.0")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("com.nimbusds:nimbus-jose-jwt:9.37")
 
     compileOnly("org.projectlombok:lombok:1.18.32")
     annotationProcessor("org.projectlombok:lombok:1.18.32")

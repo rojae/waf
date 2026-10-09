@@ -14,14 +14,20 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - ELASTICSEARCH_URIS=http://elasticsearch:9200
       - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_TOKEN=2MCyOVVBMB5q-gPpDZkkYBMDGSQb-ilFP8EgVnqqaJj8I0ViCz6w__RHHOcTe676LbrHabkFRnvJ8_Y1QKe8Vw==
-      - INFLUXDB_ORG=waf-org
-      - INFLUXDB_BUCKET=waf-realtime
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
       - GRAFANA_URL=http://grafana:3000
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - WAF_MANAGEMENT_STORE=/app/data/management.json
     volumes:
       - custom-rules-volume:/app/custom-rules
       - ./nginx/modsecurity/rules:/app/modsecurity-rules:ro
+      - waf-management-data:/app/data
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -42,7 +48,13 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - JWT_SECRET=${JWT_SECRET:-waf-super-secret-key-32bytes-long}
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-localhost}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:3001/login/oauth2/code/google}
+      - OAUTH_CALLBACK_BASE_URL=${OAUTH_CALLBACK_BASE_URL:-http://localhost:3001}
+      - OAUTH_DEFAULT_REDIRECT_URL=${OAUTH_DEFAULT_REDIRECT_URL:-http://localhost:3001}
     restart: unless-stopped
 
   # Next.js Frontend Dashboard
@@ -57,11 +69,14 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-in-production-secret-key}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - SOCIAL_API_URL=http://waf-social-api:8081
       - DASHBOARD_API_URL=http://waf-dashboard-api:8082
+      - NEXT_PUBLIC_SOCIAL_API_URL=http://localhost:8081
+      - NEXT_PUBLIC_DASHBOARD_API_URL=http://localhost:8082
     depends_on:
       - waf-dashboard-api
       - waf-social-api
@@ -69,3 +84,4 @@ services:
 
 volumes:
   custom-rules-volume:
+  waf-management-data:

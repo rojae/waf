@@ -49,8 +49,7 @@ function classify_waf_event(tag, timestamp, record)
     classification.track = track
     classification.anomaly_score = anomaly_score
     classification.rule_id = rule_id
-    classification.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    
+
     -- Add classification to record
     record.classification = classification
     

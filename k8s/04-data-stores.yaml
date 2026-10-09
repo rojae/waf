@@ -125,7 +125,10 @@ spec:
         - name: DOCKER_INFLUXDB_INIT_USERNAME
           value: "admin"
         - name: DOCKER_INFLUXDB_INIT_PASSWORD
-          value: "adminpassword"
+          valueFrom:
+            secretKeyRef:
+              name: waf-influxdb-secrets
+              key: influxdb-admin-password
         - name: DOCKER_INFLUXDB_INIT_ORG
           valueFrom:
             configMapKeyRef:
@@ -136,12 +139,17 @@ spec:
             configMapKeyRef:
               name: influxdb-config
               key: influxdb-bucket
+        - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: waf-influxdb-secrets
+              key: influxdb-token
         - name: DOCKER_INFLUXDB_INIT_RETENTION
           value: "7d"
         - name: INFLUXDB_TOKEN
           valueFrom:
-            configMapKeyRef:
-              name: influxdb-config
+            secretKeyRef:
+              name: waf-influxdb-secrets
               key: influxdb-token
         volumeMounts:
         - name: influxdb-data
@@ -222,7 +230,10 @@ spec:
         - name: CLICKHOUSE_USER
           value: "admin"
         - name: CLICKHOUSE_PASSWORD
-          value: "adminpassword"
+          valueFrom:
+            secretKeyRef:
+              name: waf-clickhouse-secrets
+              key: clickhouse-password
         volumeMounts:
         - name: clickhouse-data
           mountPath: /var/lib/clickhouse
@@ -254,9 +265,8 @@ spec:
         persistentVolumeClaim:
           claimName: waf-clickhouse-pvc
       - name: clickhouse-init
-        hostPath:
-          path: /Users/jaeseoh/Documents/workspace/waf/clickhouse/init.sql
-          type: File
+        configMap:
+          name: clickhouse-initdb
 
 ---
 # ClickHouse Service

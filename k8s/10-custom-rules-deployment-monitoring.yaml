@@ -35,8 +35,8 @@ data:
     fi
 
     # Check Nginx WAF deployment status
-    READY_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n waf-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n waf-system -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    READY_REPLICAS=$(kubectl get deployment nginx-waf -n waf-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf -n waf-system -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
 
     if [ "$READY_REPLICAS" = "$DESIRED_REPLICAS" ] && [ "$READY_REPLICAS" -gt "0" ]; then
         echo "✓ Nginx WAF deployment is healthy ($READY_REPLICAS/$DESIRED_REPLICAS replicas ready)"
@@ -82,8 +82,8 @@ data:
     echo "waf_custom_rules_total $RULES_COUNT"
 
     # Deployment metrics
-    READY_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
-    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf-with-custom-rules -n $NAMESPACE -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
+    READY_REPLICAS=$(kubectl get deployment nginx-waf -n $NAMESPACE -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+    DESIRED_REPLICAS=$(kubectl get deployment nginx-waf -n $NAMESPACE -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 0)
 
     echo "waf_nginx_ready_replicas $READY_REPLICAS"
     echo "waf_nginx_desired_replicas $DESIRED_REPLICAS"

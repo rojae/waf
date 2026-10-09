@@ -5,6 +5,7 @@
 // Cookie Names
 export const COOKIE_NAMES = {
   WAF_AT: 'WAF_AT',
+  WAF_OAUTH_STATE: 'WAF_OAUTH_STATE',
 } as const
 
 // API Endpoints
@@ -29,6 +30,13 @@ export const COOKIE_CONFIG = {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
   },
+  WAF_OAUTH_STATE: {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: 300,
+  },
 } as const
 
 // Environment Variables
@@ -43,6 +51,10 @@ export const HTTP_STATUS = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  REQUEST_TIMEOUT: 408,
+  BAD_GATEWAY: 502,
   INTERNAL_SERVER_ERROR: 500,
+  NOT_IMPLEMENTED: 501,
   SERVICE_UNAVAILABLE: 503,
 } as const

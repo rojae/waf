@@ -1,0 +1,93 @@
+---
+# Kafka to ClickHouse Consumer Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-clickhouse-consumer
+  namespace: waf-processing
+  labels:
+    app: kafka-clickhouse-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-clickhouse-consumer
+  template:
+    metadata:
+      labels:
+        app: kafka-clickhouse-consumer
+    spec:
+      initContainers:
+      - name: wait-for-kafka
+        image: confluentinc/cp-kafka:7.6.1
+        command:
+        - /bin/bash
+        - -c
+        - |
+          until kafka-broker-api-versions --bootstrap-server kafka.waf-processing.svc.cluster.local:9092 >/dev/null 2>&1; do
+            echo "Waiting for Kafka..."
+            sleep 5
+          done
+          echo "Kafka is ready"
+      - name: wait-for-clickhouse
+        image: curlimages/curl:8.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          until curl -fsS http://clickhouse.waf-data.svc.cluster.local:8123/ping >/dev/null 2>&1; do
+            echo "Waiting for ClickHouse..."
+            sleep 5
+          done
+          echo "ClickHouse is ready"
+      containers:
+      - name: consumer
+        image: waf-kafka-clickhouse-consumer:latest
+        imagePullPolicy: Never
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka.waf-processing.svc.cluster.local:9092"
+        - name: KAFKA_TOPIC
+          value: "waf-realtime-events"
+        - name: KAFKA_GROUP_ID
+          value: "clickhouse-consumer-group"
+        - name: CLICKHOUSE_HOST
+          value: "clickhouse.waf-data.svc.cluster.local"
+        - name: CLICKHOUSE_PORT
+          value: "9000"
+        - name: CLICKHOUSE_USER
+          value: "admin"
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: waf-clickhouse-secrets
+              key: clickhouse-password
+        - name: CLICKHOUSE_DATABASE
+          value: "waf_analytics"
+        - name: BATCH_SIZE
+          value: "100"
+        - name: BATCH_TIMEOUT
+          value: "5"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import sys; sys.exit(0)"
+          initialDelaySeconds: 10
+          periodSeconds: 10

@@ -107,6 +107,8 @@ REQUIRED_VARS=(
     "INFLUXDB_TOKEN"
     "INFLUXDB_ORG"
     "INFLUXDB_BUCKET"
+    "INFLUXDB_ADMIN_PASSWORD"
+    "CLICKHOUSE_PASSWORD"
     "DOMAIN"
     "COOKIE_DOMAIN"
     "GOOGLE_OAUTH_REDIRECT_URI"
@@ -131,6 +133,12 @@ if [ ${#MISSING_VARS[@]} -ne 0 ]; then
     exit 1
 fi
 
+COOKIE_SECURE=${COOKIE_SECURE:-false}
+CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-${CLICKHOUSE_DB:-waf_analytics}}
+CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
+KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS:-kafka.waf-processing.svc.cluster.local:9092}
+export COOKIE_SECURE CLICKHOUSE_DATABASE CLICKHOUSE_PORT KAFKA_BOOTSTRAP_SERVERS
+
 print_success "Environment variables loaded successfully"
 
 # =============================================
@@ -142,7 +150,10 @@ IMAGES=(
     "waf-dashboard-api:latest"
     "waf-social-api:latest"
     "waf-frontend:latest"
-    "nginx-waf:latest"
+    "waf-nginx:latest"
+    "waf-realtime-processor:latest"
+    "waf-alert-processor:latest"
+    "waf-kafka-clickhouse-consumer:latest"
 )
 
 MISSING_IMAGES=()
@@ -165,22 +176,44 @@ if [ ${#MISSING_IMAGES[@]} -ne 0 ]; then
 
         # Build backend services
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-dashboard-api:latest " ]]; then
-            docker build -t waf-dashboard-api:latest -f backend/waf-dashboard-api/Dockerfile backend/waf-dashboard-api
+            docker build -t waf-dashboard-api:latest -f backend/Dockerfile --target dashboard-api backend
         fi
 
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-social-api:latest " ]]; then
-            docker build -t waf-social-api:latest -f backend/waf-social-api/Dockerfile backend/waf-social-api
+            docker build -t waf-social-api:latest -f backend/Dockerfile --target social-api backend
         fi
 
         if [[ " ${MISSING_IMAGES[@]} " =~ " waf-frontend:latest " ]]; then
             docker build -t waf-frontend:latest -f frontend/Dockerfile.dev frontend
         fi
 
-        if [[ " ${MISSING_IMAGES[@]} " =~ " nginx-waf:latest " ]]; then
-            docker build -t nginx-waf:latest -f nginx/Dockerfile nginx
+        if [[ " ${MISSING_IMAGES[@]} " =~ " waf-nginx:latest " ]]; then
+            docker build -t waf-nginx:latest -f nginx/Dockerfile nginx
         fi
 
-        print_success "Docker images built successfully"
+        if [[ " ${MISSING_IMAGES[@]} " =~ " waf-realtime-processor:latest " ]]; then
+            docker build -t waf-realtime-processor:latest -f services/realtime-processor/Dockerfile services/realtime-processor
+        fi
+
+        if [[ " ${MISSING_IMAGES[@]} " =~ " waf-alert-processor:latest " ]]; then
+            docker build -t waf-alert-processor:latest -f services/alert-processor/Dockerfile services/alert-processor
+        fi
+
+        if [[ " ${MISSING_IMAGES[@]} " =~ " waf-kafka-clickhouse-consumer:latest " ]]; then
+            docker build -t waf-kafka-clickhouse-consumer:latest -f kafka-clickhouse-consumer/Dockerfile kafka-clickhouse-consumer
+        fi
+
+        if command -v kind >/dev/null 2>&1 && kind get clusters 2>/dev/null | grep -q .; then
+            for image in "${IMAGES[@]}"; do
+                kind load docker-image "$image"
+            done
+        elif command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; then
+            for image in "${IMAGES[@]}"; do
+                minikube image load "$image"
+            done
+        fi
+
+        print_success "Docker images built and loaded when a local cluster loader was available"
     else
         print_error "Cannot proceed without Docker images. Exiting."
         exit 1
@@ -272,8 +305,11 @@ print_step "Creating ConfigMaps with environment variables..."
 # Create temporary file with substituted values
 TEMP_CONFIG="/tmp/k8s-configmaps-secrets-applied.yaml"
 
-# Export all environment variables and substitute (using ConfigMaps-only file)
-envsubst < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
+# Substitute only deploy-time placeholders; leave embedded runtime/script
+# variables such as ${HOSTNAME}, $BROKER, and Ruby/Logstash expressions intact.
+ENVSUBST_VARS='${DOMAIN} ${COOKIE_DOMAIN} ${COOKIE_SECURE} ${GOOGLE_OAUTH_REDIRECT_URI} ${OAUTH_CALLBACK_BASE_URL} ${OAUTH_DEFAULT_REDIRECT_URL} ${INFLUXDB_TOKEN} ${INFLUXDB_ORG} ${INFLUXDB_BUCKET} ${INFLUXDB_ADMIN_PASSWORD} ${GOOGLE_CLIENT_ID} ${GOOGLE_CLIENT_SECRET} ${JWT_SECRET} ${NEXTAUTH_SECRET} ${CLICKHOUSE_PASSWORD}'
+./scripts/generate-k8s-configmaps.sh
+envsubst "$ENVSUBST_VARS" < k8s/02-configmaps-only.yaml > "$TEMP_CONFIG"
 
 # Apply only ConfigMaps
 kubectl apply -f "$TEMP_CONFIG"
@@ -295,14 +331,20 @@ kubectl apply -f k8s/04-data-stores.yaml
 print_success "Data stores deployed"
 
 print_step "Waiting for data stores to be ready..."
-kubectl wait --for=condition=ready pod -l app=elasticsearch -n waf-data --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=influxdb -n waf-data --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=elasticsearch -n waf-data --timeout=300s
+kubectl wait --for=condition=ready pod -l app=influxdb -n waf-data --timeout=300s
+kubectl wait --for=condition=ready pod -l app=clickhouse -n waf-data --timeout=300s
 
 kubectl apply -f k8s/05-processing-services.yaml
 print_success "Processing services deployed"
 
 print_step "Waiting for Kafka to be ready..."
-kubectl wait --for=condition=ready pod -l app=kafka -n waf-processing --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=kafka -n waf-processing --timeout=300s
+
+kubectl apply -f k8s/11-kafka-clickhouse-consumer.yaml
+print_success "Kafka to ClickHouse consumer deployed"
+
+kubectl wait --for=condition=ready pod -l app=kafka-clickhouse-consumer -n waf-processing --timeout=300s
 
 kubectl apply -f k8s/03-nginx-waf.yaml
 print_success "NGINX WAF deployed"
@@ -317,11 +359,12 @@ print_step "Waiting for all pods to be ready..."
 
 # Wait for critical pods
 echo "Waiting for waf-system pods..."
-kubectl wait --for=condition=ready pod -l app=waf-frontend -n waf-system --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=waf-social-api -n waf-system --timeout=300s || true
-kubectl wait --for=condition=ready pod -l app=waf-dashboard-api -n waf-system --timeout=300s || true
+kubectl wait --for=condition=ready pod -l app=nginx-waf -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-frontend -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-social-api -n waf-system --timeout=300s
+kubectl wait --for=condition=ready pod -l app=waf-dashboard-api -n waf-system --timeout=300s
 
-print_success "All pods are ready"
+print_success "Required waf-system pods are ready"
 
 # =============================================
 # Step 9: Display deployment status

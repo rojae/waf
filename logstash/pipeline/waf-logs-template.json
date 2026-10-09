@@ -1,0 +1,29 @@
+{
+  "index_patterns": ["waf-logs-*"],
+  "template": {
+    "mappings": {
+      "properties": {
+        "timestamp": { "type": "date" },
+        "client_ip": { "type": "ip" },
+        "method": { "type": "keyword" },
+        "uri": {
+          "type": "text",
+          "fields": {
+            "keyword": { "type": "keyword", "ignore_above": 2048 }
+          }
+        },
+        "status_code": { "type": "integer" },
+        "rule_id": { "type": "keyword" },
+        "severity": { "type": "keyword" },
+        "attack_type": { "type": "keyword" },
+        "message": { "type": "text" },
+        "blocked": { "type": "boolean" },
+        "country": { "type": "keyword" },
+        "user_agent": { "type": "text" },
+        "response_time": { "type": "long" },
+        "tx_id": { "type": "keyword" },
+        "classification_track": { "type": "keyword" }
+      }
+    }
+  }
+}

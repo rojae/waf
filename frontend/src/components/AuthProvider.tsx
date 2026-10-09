@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AuthContext, AuthContextType, AuthService, User } from '@/lib/auth'
 
 interface AuthProviderProps {

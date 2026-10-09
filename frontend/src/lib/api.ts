@@ -15,7 +15,16 @@ export class ApiClient {
       throw new Error(`API Error: ${response.statusText}`)
     }
 
-    return response.json()
+    if (response.status === 204 || response.status === 205) {
+      return undefined as T
+    }
+
+    const body = await response.text()
+    if (!body) {
+      return undefined as T
+    }
+
+    return JSON.parse(body) as T
   }
 
   // Dashboard APIs (now proxied through frontend API routes)
@@ -42,23 +51,23 @@ export class ApiClient {
   }
 
   // Custom Rules APIs
-  async getRules() {
-    return this.request('/api/rules')
+  async getRules<T = unknown>() {
+    return this.request<T>('/api/rules')
   }
 
-  async getRule(id: string) {
-    return this.request(`/api/rules/${id}`)
+  async getRule<T = unknown>(id: string) {
+    return this.request<T>(`/api/rules/${id}`)
   }
 
-  async createRule(rule: Record<string, unknown>) {
-    return this.request('/api/rules', {
+  async createRule<T = unknown>(rule: object) {
+    return this.request<T>('/api/rules', {
       method: 'POST',
       body: JSON.stringify(rule),
     })
   }
 
-  async updateRule(id: string, rule: Record<string, unknown>) {
-    return this.request(`/api/rules/${id}`, {
+  async updateRule<T = unknown>(id: string, rule: object) {
+    return this.request<T>(`/api/rules/${id}`, {
       method: 'PUT',
       body: JSON.stringify(rule),
     })
@@ -70,30 +79,31 @@ export class ApiClient {
     })
   }
 
-  async toggleRule(id: string) {
-    return this.request(`/api/rules/${id}/toggle`, {
-      method: 'PUT',
+  async toggleRule<T = unknown>(id: string, enabled: boolean) {
+    return this.request<T>(`/api/rules/${id}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
     })
   }
 
   // Whitelist APIs
-  async getWhitelist() {
-    return this.request('/api/whitelist')
+  async getWhitelist<T = unknown>() {
+    return this.request<T>('/api/whitelist')
   }
 
-  async getWhitelistEntry(id: string) {
-    return this.request(`/api/whitelist/${id}`)
+  async getWhitelistEntry<T = unknown>(id: string) {
+    return this.request<T>(`/api/whitelist/${id}`)
   }
 
-  async createWhitelistEntry(entry: Record<string, unknown>) {
-    return this.request('/api/whitelist', {
+  async createWhitelistEntry<T = unknown>(entry: object) {
+    return this.request<T>('/api/whitelist', {
       method: 'POST',
       body: JSON.stringify(entry),
     })
   }
 
-  async updateWhitelistEntry(id: string, entry: Record<string, unknown>) {
-    return this.request(`/api/whitelist/${id}`, {
+  async updateWhitelistEntry<T = unknown>(id: string, entry: object) {
+    return this.request<T>(`/api/whitelist/${id}`, {
       method: 'PUT',
       body: JSON.stringify(entry),
     })
@@ -105,9 +115,10 @@ export class ApiClient {
     })
   }
 
-  async toggleWhitelistEntry(id: string) {
-    return this.request(`/api/whitelist/${id}/toggle`, {
-      method: 'PUT',
+  async toggleWhitelistEntry<T = unknown>(id: string, enabled: boolean) {
+    return this.request<T>(`/api/whitelist/${id}/toggle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
     })
   }
 

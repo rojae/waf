@@ -31,15 +31,15 @@ public class ElasticsearchWafLogRepository {
             
             // Add filters
             if (severity != null && !severity.isEmpty()) {
-                criteria = criteria.and("severity.keyword").is(severity);
+                criteria = criteria.and("severity").is(severity);
             }
             
             if (attackType != null && !attackType.isEmpty()) {
-                criteria = criteria.and("attack_type.keyword").is(attackType);
+                criteria = criteria.and("attack_type").is(attackType);
             }
             
             if (clientIp != null && !clientIp.isEmpty()) {
-                criteria = criteria.and("client_ip.keyword").is(clientIp);
+                criteria = criteria.and("client_ip").is(clientIp);
             }
 
             Query query = new CriteriaQuery(criteria).setPageable(pageable);
@@ -53,7 +53,7 @@ public class ElasticsearchWafLogRepository {
             return new PageImpl<>(logs, pageable, searchHits.getTotalHits());
         } catch (Exception e) {
             log.error("Error searching WAF logs", e);
-            return Page.empty(pageable);
+            throw new IllegalStateException("log_sink_unavailable", e);
         }
     }
 
@@ -81,7 +81,7 @@ public class ElasticsearchWafLogRepository {
             return elasticsearchTemplate.count(query, WafLogDocument.class);
         } catch (Exception e) {
             log.error("Error counting total logs", e);
-            return 0L;
+            throw new IllegalStateException("log_sink_unavailable", e);
         }
     }
     
@@ -100,7 +100,7 @@ public class ElasticsearchWafLogRepository {
             return new PageImpl<>(logs, pageable, searchHits.getTotalHits());
         } catch (Exception e) {
             log.error("Error fetching recent logs", e);
-            return Page.empty(pageable);
+            throw new IllegalStateException("log_sink_unavailable", e);
         }
     }
 }

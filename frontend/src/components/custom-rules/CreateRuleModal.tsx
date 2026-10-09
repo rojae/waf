@@ -37,26 +37,14 @@ export default function CreateRuleModal({ open, onClose, onRuleCreated }: Create
     setLoading(true);
 
     try {
-      // Try to validate rule first
-      try {
-        const validation = await customRuleAPI.validateRule(formData);
-        if (!validation.valid) {
-          toast.error(`Validation failed: ${validation.errors.join(', ')}`);
-          return;
-        }
-      } catch (validationError) {
-        console.warn('Validation API not available, skipping validation:', validationError);
-        // Skip validation silently
+      const validation = await customRuleAPI.validateRule(formData);
+      if (!validation.valid) {
+        toast.error(`Validation failed: ${validation.errors.join(', ')}`);
+        return;
       }
 
-      // Try to create rule
-      try {
-        await customRuleAPI.createRule(formData);
-        toast.success('Custom rule created successfully');
-      } catch (createError) {
-        console.warn('Create API not available, simulating creation:', createError);
-        toast.success('Custom rule created successfully');
-      }
+      await customRuleAPI.createRule(formData);
+      toast.success('Custom rule draft created. It is stored but not yet applied to nginx.');
 
       onRuleCreated();
       onClose();
@@ -76,7 +64,7 @@ export default function CreateRuleModal({ open, onClose, onRuleCreated }: Create
       });
     } catch (error) {
       console.error('Error creating rule:', error);
-      toast.error('Failed to process rule creation');
+      toast.error(error instanceof Error ? error.message : 'Failed to create rule draft');
     } finally {
       setLoading(false);
     }

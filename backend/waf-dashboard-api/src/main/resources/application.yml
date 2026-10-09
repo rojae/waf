@@ -26,10 +26,15 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3001}
   jwt:
-    secret: ${JWT_SECRET:change-me-32bytes-len}
+    secret: ${JWT_SECRET}
     access-ttl-seconds: 900
     cookie-name: WAF_AT
     cookie-domain: ${COOKIE_DOMAIN:localhost}
+    cookie-secure: ${COOKIE_SECURE:false}
+  debug:
+    test-routes-enabled: ${WAF_DEBUG_TEST_ROUTES_ENABLED:false}
+  management:
+    store: ${WAF_MANAGEMENT_STORE:./data/management.json}
   influxdb:
     url: ${INFLUXDB_URL:http://localhost:8086}
     token: ${INFLUXDB_TOKEN:admin-token}
@@ -39,3 +44,7 @@ app:
     url: ${GRAFANA_URL:http://localhost:3000}
     admin-user: ${GRAFANA_USER:admin}
     admin-password: ${GRAFANA_PASSWORD:admin}
+  realtime:
+    topic: ${WAF_REALTIME_TOPIC:waf-realtime-events}
+    fanout-threads: ${WAF_REALTIME_FANOUT_THREADS:2}
+    max-emitters: ${WAF_REALTIME_MAX_EMITTERS:200}

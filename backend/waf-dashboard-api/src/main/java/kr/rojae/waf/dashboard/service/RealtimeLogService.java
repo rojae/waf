@@ -2,33 +2,43 @@ package kr.rojae.waf.dashboard.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CompletableFuture;
 import java.io.IOException;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class RealtimeLogService {
 
     private final CopyOnWriteArrayList<SseEmitter> logEmitters = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<SseEmitter> metricsEmitters = new CopyOnWriteArrayList<>();
+    private final ExecutorService fanoutExecutor;
+    private final int maxEmitters;
 
-    @KafkaListener(topics = "waf-realtime-events", groupId = "dashboard-realtime-group")
+    public RealtimeLogService(@Value("${app.realtime.fanout-threads:2}") int fanoutThreads,
+                              @Value("${app.realtime.max-emitters:200}") int maxEmitters) {
+        this.fanoutExecutor = Executors.newFixedThreadPool(Math.max(1, fanoutThreads));
+        this.maxEmitters = maxEmitters;
+    }
+
+    @KafkaListener(topics = "${app.realtime.topic:waf-realtime-events}", groupId = "${spring.kafka.consumer.group-id}")
     public void handleRealtimeLog(String logMessage) {
         log.debug("Received kafka message: {}", logMessage);
-        
-        // Parse and broadcast to all connected clients
-        CompletableFuture.runAsync(() -> {
-            broadcastLogMessage(logMessage);
-        });
+        fanoutExecutor.execute(() -> broadcastLogMessage(logMessage));
     }
 
     public void addEmitter(SseEmitter emitter) {
+        if (logEmitters.size() >= maxEmitters) {
+            emitter.completeWithError(new IllegalStateException("too_many_sse_clients"));
+            return;
+        }
         logEmitters.add(emitter);
         log.info("Added log emitter. Total connections: {}", logEmitters.size());
     }
@@ -39,6 +49,10 @@ public class RealtimeLogService {
     }
 
     public void addMetricsEmitter(SseEmitter emitter) {
+        if (metricsEmitters.size() >= maxEmitters) {
+            emitter.completeWithError(new IllegalStateException("too_many_sse_clients"));
+            return;
+        }
         metricsEmitters.add(emitter);
         log.info("Added metrics emitter. Total connections: {}", metricsEmitters.size());
     }
@@ -113,5 +127,10 @@ public class RealtimeLogService {
                 return true;
             }
         });
+    }
+
+    @PreDestroy
+    void shutdown() {
+        fanoutExecutor.shutdownNow();
     }
 }
